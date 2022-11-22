@@ -23,7 +23,9 @@ class WeightedLogisticRegression(nn.Module):
         self.linear = torch.nn.Linear(in_features=num_features, 
                                       out_features=num_labels, bias=True)
         self.sigmoid = nn.Sigmoid()
-        weights = torch.rand(degrees_freedom, 1, requires_grad=False)
+        # weights = torch.rand(degrees_freedom, 1, requires_grad=False)
+        weights = torch.tensor([[1.], [1.]], requires_grad=False)
+        # Given that p(x,y) < w < 0.25 and p(x,y) = beta it is reasonable to start with w as 1.
         self.weights = torch.nn.parameter.Parameter(weights, requires_grad=True)
 
     def forward(self, features):

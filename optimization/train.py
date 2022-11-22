@@ -5,6 +5,7 @@ import torch.optim as optim
 import pandas as pd
 import numpy as np
 from model import WeightedLogisticRegression
+import matplotlib.pyplot as plt
 
 NUM_FEATURES = 13
 NUM_LABELS = 1
@@ -28,7 +29,8 @@ def assign_weights(row, label, w):
                 return 1/w[0]
         else:
             return ONE
-    if label ==1:
+
+    if label == 1:
         if row[1] == 0:
             return ONE 
         else:
@@ -38,7 +40,7 @@ def assign_weights(row, label, w):
                 return 1/w[1]
 
 
-def train_model(model, data, labels):
+def train_model(model, data, labels, mode):
     """training procedure to produce uncertanty quantification.
 
     In order to produce uncertainty quantification on the coefficients,
@@ -70,20 +72,19 @@ def train_model(model, data, labels):
                 # Step 2.
                 features = torch.tensor(instance.astype(np.double)).float()
                 # Step 3. Run our forward pass.
-                weight = assign_weights(features, label, model.weights)
-
-                with torch.no_grad():            
-                        weight.clamp_(0)
-                        weight.clamp_(None, 0.25)
+                if i == 0:
+                    weight = 1.
+                else:
+                    weight = assign_weights(features, label, model.weights)
                 probs = model(features) * weight
 
                 with torch.no_grad():            
-                        probs.clamp_(None, 1)
+                        probs.clamp_(0, 1)
+               
                 target = torch.tensor(label, dtype = torch.long).expand((1)).float()
 
                 # Step 4. Compute the loss, gradients, and update the parameters by
                 loss = loss_function(probs, target)
-
 
                 if loss.requires_grad:
                     loss.backward(create_graph=True)
@@ -91,9 +92,17 @@ def train_model(model, data, labels):
 
         # Put an assert ensuring the betas have 0 gradients.
         coeff = next(model.linear.parameters())
-        loss_w = second_loss_function(coeff[0][0], torch.tensor([0.]))
-        print(loss)
+        # import pdb; pdb.set_trace()
+        loss_w = second_loss_function(-coeff[0][7], torch.tensor(0.))
+        print(loss_w)
         loss_w.backward()
+        optimizer_2.step()
+
+        with torch.no_grad():            
+            # are theese good assumptions?
+            model.weights.clamp_(coeff[0][7], 0.25 - coeff[0][7])
+
+    return coeff[0][0]
     
 if __name__ == '__main__':
     """The following file executes a training pipe-line for a debiased logistic regresssion.
@@ -119,7 +128,7 @@ if __name__ == '__main__':
     ma_good_sample = males_good.sample(frac = 0.25)
     fem_bad_sample = females_bad.sample(frac = 0.25)
     sex_skewed_data = pd.concat([ma_good_sample, males_bad, females_good, fem_bad_sample])
-
+    print("Data feat:", sex_skewed_data.columns)
     var = data_dummies.columns
     VAR = var[:-1]
 
@@ -127,5 +136,10 @@ if __name__ == '__main__':
     labels = sex_skewed_data["Creditability"]
 
     model = WeightedLogisticRegression(NUM_FEATURES, NUM_LABELS, DEEGRES_FREEDOM)
-    train_model(model, data, labels)
+
+    coef = train_model(model, data, labels, "min")
+    print("Final", coef)
+
+
+
 
