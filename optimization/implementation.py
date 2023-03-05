@@ -1,4 +1,5 @@
-# TODO (Santiago): Brief description of the Script
+"""The following file executes a training pipe-line 
+    for a vectorized robust debiaser."""
 import scipy
 import torch
 import itertools
@@ -80,68 +81,94 @@ def build_strata_counts_matrix(weight_features: torch.Tensor, counts: torch.Tens
 
     return y_0_ground_truth, y_1_ground_truth
 
-if __name__ == '__main__':
-    """The following file executes a training pipe-line 
-    for a vectorized robust debiaser
+def simulate_multiple_outcomes(dataset_size: int, _feature_number:int = 4):
+    """_summary_
+
+    Args:
+        dataset_size (int): _description_
+
+    Returns:
+        _type_: _description_
     """
+    X = np.random.multivariate_normal(mean=np.zeros(4), cov=np.identity(4), size = dataset_size)
+    X = pd.DataFrame([pd.cut(X[:,0], [-np.inf, 0, np.inf]).codes,
+                    pd.cut(X[:,1], [-np.inf, 1, np.inf]).codes,
+                    pd.cut(X[:,2], [-np.inf, -1, np.inf]).codes,
+                    pd.cut(X[:,3], [-np.inf, -1, 1, np.inf]).codes]).T
 
-    # TODO (Santiago) Refactor Dataset creation for a simulated dataset
-    data = pd.read_csv("german_credit_data.csv", index_col=0)
-    data_labels = pd.read_csv("german_credit.csv")
-    data_dummies = pd.get_dummies(data["Sex"])
+    pi_x = scipy.special.expit((2*X[0] - 4*X[1] + 2*X[2] - X[3])/4)
+    A = 1*(pi_x > np.random.uniform(size=dataset_size))
 
-    data_dummies[["free", "own", "rent"]] = pd.get_dummies(data["Housing"])
-    data_dummies[["little", "moderate", "quite rich", "rich"]] = pd.get_dummies(data["Saving accounts"])
-    data_dummies[["Age Bucket 1", "Age Bucket 2"]] = pd.get_dummies(pd.cut(data.Age, [18, 45, 75]))
-    data_dummies["Creditability"] = data_labels["Creditability"]
+    mu_0 = scipy.special.expit(-X[1] - X[2] - X[3] + 4*A)
+    y_0 = 1*(mu_0 > np.random.uniform(size=dataset_size))
 
-    income_skewed_data = []
-    confounders = ["little", "moderate", "quite rich", "rich"]
-    # sample_prop = np.random.uniform(size=4)
-    sample_prop = [0.8, 0.8, 0.4, 0.6]
+    mu_1 = scipy.special.expit(X[0] + X[2] + X[3] + 6*A)
+    y_1 = 1*(mu_1 > np.random.uniform(size=dataset_size))
 
-    for ii in range(4):
-        income_skewed_data.append(data_dummies[data_dummies[confounders[ii]] == 1].sample(frac=sample_prop[ii]))
+    obs = scipy.special.expit(X.mean(axis=1) - 3*A) > np.random.uniform(size=dataset_size)
 
-    income_skewed_data = pd.concat(income_skewed_data)
-
+    return X, A, y_0, y_1, obs
+    
+def create_dataframe(X, A):
+    skewed_data = pd.DataFrame()
+    skewed_data[["white", "non-white"]] = pd.get_dummies(X[0])
+    skewed_data[["Age Bucket 1", "Age Bucket 2"]] = pd.get_dummies(X[1])
+    skewed_data[["own", "rent"]] = pd.get_dummies(X[2])
+    skewed_data[["little", "moderate", "quite rich"]] = pd.get_dummies(X[3])
     # Here is alist of all levels of the dataset: each one as a list containing its corresponding estrata
-    levels = [['female', 'male'], ['free', 'own', 'rent'], ['little', 'moderate',
-       'quite rich', 'rich'], ['Age Bucket 1', 'Age Bucket 2']]
+    skewed_data[["female", "male"]] = pd.get_dummies(A)
+    return skewed_data
    
 
-    counts = build_counts(income_skewed_data, levels, "Creditability")
-    weights_features = torch.zeros(counts.numel(), 9)
+if __name__ == '__main__':
+
+    DATASET_SIZE = 10000 
+    X_raw, A_raw, y_0_raw, y_1_raw, obs = simulate_multiple_outcomes(DATASET_SIZE)
+    X, A, y_0, y_1 = X_raw[obs], A_raw[obs], y_0_raw[obs], y_1_raw[obs]
+
+    skewed_data = create_dataframe(X, A)
+    data = create_dataframe(X_raw, A_raw)
+
+    levels = [["female", "male"], ["white", "non-white"], ["Age Bucket 1", "Age Bucket 2"], ["own", "rent"], ["little", "moderate", "quite rich"]]
+    
+    # A    
+    skewed_data["Creditability"] = y_0
+    data["Creditability"] = y_0_raw
+    counts = build_counts(skewed_data, levels, "Creditability")
+    weights_features = torch.zeros(counts.numel(), 8)
     idx = 0
     for target in [0, 1]:
-        for i, sex in enumerate(["female", "male"]):
-            for housing in ['free', 'own', 'rent']:
-                for j, income in enumerate(['little', 'moderate', 'quite rich', 'rich']):
-                    for age in ['Age Bucket 1', 'Age Bucket 2']:
-                        credit_sex_features = [0]*4
-                        credit_sex_features[target*2 + i] = 1
-                        income_features = [0]*4
-                        income_features[j] = 1
-                        weights_features[idx] = torch.tensor(credit_sex_features + income_features + [1]).float()
-                        idx += 1
+        for m, se in enumerate(["female", "male"]):
+            for i, race in enumerate(["white", "non-white"]):
+                    for j, income in enumerate(["little", "moderate", "quite rich"]):
+                        for k, housing in enumerate(["own", "rent"]):
+                            for l, age in enumerate(['Age Bucket 1', 'Age Bucket 2']):
+                                credit_se_features = [0]*4
+                                credit_se_features[target*2 + m] = 1
+                                income_features = [0]*3
+                                income_features[j] = 1
+                                weights_features[idx] = torch.tensor(credit_se_features + income_features + [1]).float()
+                                idx += 1
 
-    b0 = np.array([91, 209])
-    b1 = np.array([219, 481])
+    b0 = np.array([37610, 5954])
+    b1 = np.array([7386, 49050])
+
+    
+
     data_count_0 = counts[0]
     data_count_1 = counts[1]
-    aux = data_dummies.groupby('female')['Creditability'].mean()
-    gt_ate= aux[1] - aux[0]
-    gt_ate
+    yc_00 = np.mean(scipy.special.expit(-X[1] - X[2] - X[3]))
+    yc_01 = np.mean(scipy.special.expit(-X[1] - X[2] - X[3] + 4))
+    gt_ate = (yc_01 - yc_00)
 
     A0, A1 = build_strata_counts_matrix(weights_features, counts, ["female", "male"])
     torch.autograd.set_detect_anomaly(True)
     alpha = torch.rand(weights_features.shape[1], requires_grad=True)
     W = np.unique(weights_features.numpy(), axis=0)
     tol = 0.00000001
-
     optim = torch.optim.Adam([alpha], lr=5e-4)
 
-    for iteration in range(10000):
+    for iteration in range(100000):
         w = cp.Variable(alpha.shape[0])
         alpha_fixed = alpha.squeeze().detach().numpy()
         A_0 = A0.numpy()
@@ -149,10 +176,11 @@ if __name__ == '__main__':
 
         objective = cp.sum_squares(w - alpha_fixed)
         # With the two rstrictions (as it should) the problem is infeasible W >=1 ????
-        restrictions = [A_0@ w == b0, A_1@ w == b1]
+        restrictions = [A_0@ w == b0, A_1@ w == b1, w>= 1]
         prob = cp.Problem(cp.Minimize(objective), restrictions)
         prob.solve()
-
+        
+        
         alpha.data = torch.tensor(w.value).float()
         weights_y1 = (weights_features[weights_features.shape[0]//2:]@alpha).reshape(*data_count_0.shape)
         weights_y0 = (weights_features[:weights_features.shape[0]//2]@alpha).reshape(*data_count_1.shape)
@@ -177,4 +205,3 @@ if __name__ == '__main__':
         optim.zero_grad()
         loss.backward()
         optim.step()
-        
