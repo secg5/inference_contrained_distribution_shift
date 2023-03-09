@@ -26,7 +26,8 @@ def build_counts(data : pd.DataFrame, levels: List[List], target:str):
     count = torch.zeros(shape)
     for _, row in data.iterrows():
         position = [0 for i in range(len(levels) + 1)]
-        position[0] = row[target]
+        # import pdb; pdb.set_trace()
+        position[0] = int(row[target])
         
         for index, level in enumerate(levels):
             for index_j, feature in enumerate(level):
@@ -37,7 +38,8 @@ def build_counts(data : pd.DataFrame, levels: List[List], target:str):
     count[count == 0] = 0.00001
     return count       
 
-def build_strata_counts_matrix(weight_features: torch.Tensor, counts: torch.Tensor, level: List[str]):
+def build_strata_counts_matrix(weight_features: torch.Tensor, 
+                               counts: torch.Tensor, level: List[str]):
     """Builds linear restrictions for a convex opt problem.
     
     This method build a Matrix with counts by combination of strata,
@@ -91,21 +93,23 @@ def simulate_multiple_outcomes(dataset_size: int, _feature_number:int = 4):
         _type_: _description_
     """
     X = np.random.multivariate_normal(mean=np.zeros(4), cov=np.identity(4), size = dataset_size)
+   
+
+    pi_x = scipy.special.expit((2*X[:,0] - 4*X[:,1] + 2*X[:,2] - X[:,3])/4)
+    A = 1*(pi_x > np.random.uniform(size=dataset_size))
+
+    mu_0 = scipy.special.expit(-X[:,1] - X[:,2] - X[:,3] + 4*A)
+    y_0 = 1*(mu_0 > np.random.uniform(size=dataset_size))
+
+    mu_1 = scipy.special.expit(X[:,0] + X[:,2] + X[:,3] + 6*A)
+    y_1 = 1*(mu_1 > np.random.uniform(size=dataset_size))
+
+    obs = scipy.special.expit(X[:,3] - 3*A) > np.random.uniform(size=dataset_size)
+
     X = pd.DataFrame([pd.cut(X[:,0], [-np.inf, 0, np.inf]).codes,
                     pd.cut(X[:,1], [-np.inf, 1, np.inf]).codes,
                     pd.cut(X[:,2], [-np.inf, -1, np.inf]).codes,
                     pd.cut(X[:,3], [-np.inf, -1, 1, np.inf]).codes]).T
-
-    pi_x = scipy.special.expit((2*X[0] - 4*X[1] + 2*X[2] - X[3])/4)
-    A = 1*(pi_x > np.random.uniform(size=dataset_size))
-
-    mu_0 = scipy.special.expit(-X[1] - X[2] - X[3] + 4*A)
-    y_0 = 1*(mu_0 > np.random.uniform(size=dataset_size))
-
-    mu_1 = scipy.special.expit(X[0] + X[2] + X[3] + 6*A)
-    y_1 = 1*(mu_1 > np.random.uniform(size=dataset_size))
-
-    obs = scipy.special.expit(X[3] - 3*A) > np.random.uniform(size=dataset_size)
 
     return X, A, y_0, y_1, obs
     
@@ -182,12 +186,13 @@ if __name__ == '__main__':
         A_1 = A1.numpy()
 
         objective = cp.sum_squares(w - alpha_fixed)
-        restrictions = [A_0@ w == b0, A_1@ w == b1]#, w>= 1]
+        restrictions = [A_0@ w == b0, A_1@ w == b1, w >= 0]
         prob = cp.Problem(cp.Minimize(objective), restrictions)
         prob.solve()
         
         
         alpha.data = torch.tensor(w.value).float()
+        # import pdb ; pdb.set_trace()
         weights_y0 = (weights_features[:weights_features.shape[0]//2]@alpha).reshape(*data_count_0.shape)
         weights_y1 = (weights_features[weights_features.shape[0]//2:]@alpha).reshape(*data_count_1.shape)
         
@@ -203,7 +208,7 @@ if __name__ == '__main__':
         total_weight_count = weighted_counts_1[sex] + weighted_counts_0[sex]
         ATE = ((probs[sex] - probs[sex_base])*total_weight_count/total_weight_count.sum()).sum()
         
-        loss = ATE
+        loss = -ATE
         if iteration % 500 == 0:
             print(f"ATE: {ATE.item()}, ground_truth {gt_ate}")
         
