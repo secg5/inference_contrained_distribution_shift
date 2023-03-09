@@ -42,7 +42,7 @@ def build_strata_counts_matrix(weight_features: torch.Tensor, counts: torch.Tens
     
     This method build a Matrix with counts by combination of strata,
     It will return two matrixes each one associated to the idividuals
-    with y=1 or y=1:
+    with y=0 or y=1:
     
     A_1 (a_{ij}), a_{ij} is the number of observations in the dataset
     such that y=1 x_i = 1 and x_j =1.
@@ -105,7 +105,7 @@ def simulate_multiple_outcomes(dataset_size: int, _feature_number:int = 4):
     mu_1 = scipy.special.expit(X[0] + X[2] + X[3] + 6*A)
     y_1 = 1*(mu_1 > np.random.uniform(size=dataset_size))
 
-    obs = scipy.special.expit(X.mean(axis=1) - 3*A) > np.random.uniform(size=dataset_size)
+    obs = scipy.special.expit(X[3] - 3*A) > np.random.uniform(size=dataset_size)
 
     return X, A, y_0, y_1, obs
     
@@ -122,7 +122,7 @@ def create_dataframe(X, A):
 
 if __name__ == '__main__':
 
-    DATASET_SIZE = 10000 
+    DATASET_SIZE = 100000 
     X_raw, A_raw, y_0_raw, y_1_raw, obs = simulate_multiple_outcomes(DATASET_SIZE)
     X, A, y_0, y_1 = X_raw[obs], A_raw[obs], y_0_raw[obs], y_1_raw[obs]
 
@@ -131,7 +131,6 @@ if __name__ == '__main__':
 
     levels = [["female", "male"], ["white", "non-white"], ["Age Bucket 1", "Age Bucket 2"], ["own", "rent"], ["little", "moderate", "quite rich"]]
     
-    # A    
     skewed_data["Creditability"] = y_0
     data["Creditability"] = y_0_raw
     counts = build_counts(skewed_data, levels, "Creditability")
@@ -150,22 +149,30 @@ if __name__ == '__main__':
                                 weights_features[idx] = torch.tensor(credit_se_features + income_features + [1]).float()
                                 idx += 1
 
-    b0 = np.array([37610, 5954])
-    b1 = np.array([7386, 49050])
+    y00_female = sum((data["Creditability"] == 0) & (data["female"] == 1))
+    y01_female = sum((data["Creditability"] == 1) & (data["female"] == 1))
+
+    y00_male = sum((data["Creditability"] == 0) & (data["male"] == 1))
+    y01_male = sum((data["Creditability"] == 1) & (data["male"] == 1))
 
     
+    
+    b0 = np.array([y00_female, y00_male])
+    b1 = np.array([y01_female, y01_male])
 
     data_count_0 = counts[0]
     data_count_1 = counts[1]
+
     yc_00 = np.mean(scipy.special.expit(-X[1] - X[2] - X[3]))
     yc_01 = np.mean(scipy.special.expit(-X[1] - X[2] - X[3] + 4))
+
     gt_ate = (yc_01 - yc_00)
 
     A0, A1 = build_strata_counts_matrix(weights_features, counts, ["female", "male"])
+
     torch.autograd.set_detect_anomaly(True)
     alpha = torch.rand(weights_features.shape[1], requires_grad=True)
     W = np.unique(weights_features.numpy(), axis=0)
-    tol = 0.00000001
     optim = torch.optim.Adam([alpha], lr=5e-4)
 
     for iteration in range(100000):
@@ -175,16 +182,14 @@ if __name__ == '__main__':
         A_1 = A1.numpy()
 
         objective = cp.sum_squares(w - alpha_fixed)
-        # With the two rstrictions (as it should) the problem is infeasible W >=1 ????
-        restrictions = [A_0@ w == b0, A_1@ w == b1, w>= 1]
+        restrictions = [A_0@ w == b0, A_1@ w == b1]#, w>= 1]
         prob = cp.Problem(cp.Minimize(objective), restrictions)
         prob.solve()
         
         
         alpha.data = torch.tensor(w.value).float()
-        weights_y1 = (weights_features[weights_features.shape[0]//2:]@alpha).reshape(*data_count_0.shape)
-        weights_y0 = (weights_features[:weights_features.shape[0]//2]@alpha).reshape(*data_count_1.shape)
-        
+        weights_y0 = (weights_features[:weights_features.shape[0]//2]@alpha).reshape(*data_count_0.shape)
+        weights_y1 = (weights_features[weights_features.shape[0]//2:]@alpha).reshape(*data_count_1.shape)
         
         weighted_counts_1 = weights_y1*data_count_1
         weighted_counts_0 = weights_y0*data_count_0
@@ -194,7 +199,7 @@ if __name__ == '__main__':
         
         probs = weighted_counts_1/(weighted_counts_1 + weighted_counts_0)
 
-        
+        # import pdb; pdb.set_trace() 
         total_weight_count = weighted_counts_1[sex] + weighted_counts_0[sex]
         ATE = ((probs[sex] - probs[sex_base])*total_weight_count/total_weight_count.sum()).sum()
         
