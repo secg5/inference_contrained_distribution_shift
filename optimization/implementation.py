@@ -8,6 +8,7 @@ import pandas as pd
 import cvxpy as cp
 import numpy as np
 import matplotlib.pyplot as plt
+from torch.optim.lr_scheduler import StepLR
 
 from typing import List
     
@@ -99,20 +100,26 @@ def simulate_multiple_outcomes(dataset_size: int, _feature_number:int = 4):
     pi_x = scipy.special.expit((2*X[:,0] - 4*X[:,1] + 2*X[:,2] - X[:,3])/4)
     A = 1*(pi_x > np.random.uniform(size=dataset_size))
 
-    mu_0 = scipy.special.expit(X[:,1] - X[:,2] + X[:,3] - 2*A)
+    # mu_0 = scipy.special.expit(X[:,1] - X[:,2] + X[:,3] - 2*A)
+    mu_0 = scipy.special.expit(X[:,1] - X[:,3] - 2*A)
     y_0 = 1*(mu_0 > np.random.uniform(size=dataset_size))
 
     mu_1 = scipy.special.expit(X[:,0] + X[:,2] - X[:,3])
     y_1 = 1*(mu_1 > np.random.uniform(size=dataset_size))
 
     obs = scipy.special.expit(X[:,3] - 3*A) > np.random.uniform(size=dataset_size)
+    yc_00 = np.mean(scipy.special.expit(X[:,1] - X[:,3]))
+    yc_01 = np.mean(scipy.special.expit(X[:,1] - X[:,3] - 2))
+    
+    gt_ate = yc_00 - yc_01
+    print(f"Groundtruth:{gt_ate}") 
 
     X = pd.DataFrame([pd.cut(X[:,0], [-np.inf, 0, np.inf]).codes,
                     pd.cut(X[:,1], [-np.inf, 1, np.inf]).codes,
                     pd.cut(X[:,2], [-np.inf, -1, np.inf]).codes,
                     pd.cut(X[:,3], [-np.inf, -1, 1, np.inf]).codes]).T
 
-    return X, A, y_0, y_1, obs
+    return X, A, y_0, y_1, obs, gt_ate
     
 def create_dataframe(X, A):
     skewed_data = pd.DataFrame()
@@ -127,17 +134,17 @@ def run_search(A_0, A_1,data_count_1, data_count_0, weights_features, upper_boun
     torch.autograd.set_detect_anomaly(True)
     alpha = torch.rand(weights_features.shape[1], requires_grad=True)
     W = np.unique(weights_features.numpy(), axis=0)
-    optim = torch.optim.Adam([alpha], lr=5e-4)
-
+    optim = torch.optim.Adam([alpha], 0.001)
+    scheduler = StepLR(optim, step_size=300, gamma=0.1)
     loss_values = []
-    for iteration in range(100000):
+    for iteration in range(5000):
         w = cp.Variable(alpha.shape[0])
         alpha_fixed = alpha.squeeze().detach().numpy()
         A_0 = A0.numpy()
         A_1 = A1.numpy()
 
         objective = cp.sum_squares(w - alpha_fixed)
-        restrictions = [A_0@ w == b0, A_1@ w == b1, w >= 0]
+        restrictions = [A_0@ w == b0, A_1@ w == b1, w >= 0.3]
         prob = cp.Problem(cp.Minimize(objective), restrictions)
         prob.solve()
         
@@ -166,6 +173,7 @@ def run_search(A_0, A_1,data_count_1, data_count_0, weights_features, upper_boun
         optim.zero_grad()
         loss.backward()
         optim.step()
+        scheduler.step()
 
     if upper_bound:
         ret = max(loss_values)
@@ -176,7 +184,7 @@ def run_search(A_0, A_1,data_count_1, data_count_0, weights_features, upper_boun
 if __name__ == '__main__':
 
     DATASET_SIZE = 100000 
-    X_raw, A_raw, y_0_raw, y_1_raw, obs = simulate_multiple_outcomes(DATASET_SIZE)
+    X_raw, A_raw, y_0_raw, y_1_raw, obs, gt_ate = simulate_multiple_outcomes(DATASET_SIZE)
     X, A, y_0, y_1 = X_raw[obs], A_raw[obs], y_0_raw[obs], y_1_raw[obs]
 
     skewed_data = create_dataframe(X, A)
@@ -216,21 +224,19 @@ if __name__ == '__main__':
     data_count_0 = counts[0]
     data_count_1 = counts[1]
 
-    yc_00 = np.mean(scipy.special.expit(X[1] - X[2] + X[3]))
-    yc_01 = np.mean(scipy.special.expit(X[1] - X[2] + X[3] - 2))
-
-    gt_ate = (yc_00 - yc_01)
-
     A0, A1 = build_strata_counts_matrix(weights_features, counts, ["female", "male"])
 
-    upper_bound = True
-    max_bound, min_loss_values = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate)
-
+    
     upper_bound = False
-    min_bound, max_loss_values = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate)
+    min_bound, min_loss_values = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate)
+
+    upper_bound = True
+    max_bound, max_loss_values = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate)
+
 
     print(f"min:{float(min_bound)} , gt:{gt_ate},  max:{float(max_bound)}")
     plt.plot(min_loss_values)
     plt.plot(max_loss_values)
+    plt.axhline(y=gt_ate, color='r', linestyle='-')
     plt.legend(["min", "max"])
     plt.savefig("losses")
