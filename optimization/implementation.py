@@ -134,10 +134,10 @@ def run_search(A_0, A_1,data_count_1, data_count_0, weights_features, upper_boun
     torch.autograd.set_detect_anomaly(True)
     alpha = torch.rand(weights_features.shape[1], requires_grad=True)
     W = np.unique(weights_features.numpy(), axis=0)
-    optim = torch.optim.Adam([alpha], 0.001)
-    scheduler = StepLR(optim, step_size=300, gamma=0.1)
+    optim = torch.optim.Adam([alpha], 0.01)
+    scheduler = StepLR(optim, step_size=500, gamma=0.1)
     loss_values = []
-    for iteration in range(5000):
+    for iteration in range(3000):
         w = cp.Variable(alpha.shape[0])
         alpha_fixed = alpha.squeeze().detach().numpy()
         A_0 = A0.numpy()
