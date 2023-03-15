@@ -3,6 +3,7 @@
 import scipy
 import torch
 import itertools
+import datetime
 
 import pandas as pd
 import cvxpy as cp
@@ -96,29 +97,29 @@ def simulate_multiple_outcomes(dataset_size: int, _feature_number:int = 4):
     """
     X = np.random.multivariate_normal(mean=np.zeros(4), cov=np.identity(4), size = dataset_size)
    
-
-    pi_x = scipy.special.expit((2*X[:,0] - 4*X[:,1] + 2*X[:,2] - X[:,3])/4)
-    A = 1*(pi_x > np.random.uniform(size=dataset_size))
-
-    # mu_0 = scipy.special.expit(X[:,1] - X[:,2] + X[:,3] - 2*A)
-    mu_0 = scipy.special.expit(X[:,1] - X[:,3] - 2*A)
-    y_0 = 1*(mu_0 > np.random.uniform(size=dataset_size))
-
-    mu_1 = scipy.special.expit(X[:,0] + X[:,2] - X[:,3])
-    y_1 = 1*(mu_1 > np.random.uniform(size=dataset_size))
-
-    obs = scipy.special.expit(X[:,3] - 3*A) > np.random.uniform(size=dataset_size)
-    yc_00 = np.mean(scipy.special.expit(X[:,1] - X[:,3]))
-    yc_01 = np.mean(scipy.special.expit(X[:,1] - X[:,3] - 2))
-    
-    gt_ate = yc_00 - yc_01
-    print(f"Groundtruth:{gt_ate}") 
-
     X = pd.DataFrame([pd.cut(X[:,0], [-np.inf, 0, np.inf]).codes,
                     pd.cut(X[:,1], [-np.inf, 1, np.inf]).codes,
                     pd.cut(X[:,2], [-np.inf, -1, np.inf]).codes,
                     pd.cut(X[:,3], [-np.inf, -1, 1, np.inf]).codes]).T
+    
+    pi_x = scipy.special.expit((2*X[0] - 4*X[1] + 2*X[2] - X[3])/4)
+    A = 1*(pi_x > np.random.uniform(size=dataset_size))
 
+    
+    
+    # mu_0 = scipy.special.expit(X[:,1] - X[:,2] + X[:,3] - 2*A)
+    mu_0 = scipy.special.expit(X[1] - X[3] - 2*A)
+    y_0 = 1*(mu_0 > np.random.uniform(size=dataset_size))
+
+    mu_1 = scipy.special.expit(X[0] + X[2] - X[3])
+    y_1 = 1*(mu_1 > np.random.uniform(size=dataset_size))
+
+    obs = scipy.special.expit(X[3] - 3*A) > np.random.uniform(size=dataset_size)
+    yc_00 = np.mean(scipy.special.expit(X[1] - X[3]))
+    yc_01 = np.mean(scipy.special.expit(X[1] - X[3] - 2))
+    
+    gt_ate = yc_00 - yc_01
+    print(f"Groundtruth:{gt_ate}") 
     return X, A, y_0, y_1, obs, gt_ate
     
 def create_dataframe(X, A):
@@ -131,20 +132,29 @@ def create_dataframe(X, A):
     return skewed_data
    
 def run_search(A_0, A_1,data_count_1, data_count_0, weights_features, upper_bound, gt_ate):
+    # How close related f and g are and produce tighter or looser bounds.
+    # Everything converges 
     torch.autograd.set_detect_anomaly(True)
     alpha = torch.rand(weights_features.shape[1], requires_grad=True)
     W = np.unique(weights_features.numpy(), axis=0)
-    optim = torch.optim.Adam([alpha], 0.01)
-    scheduler = StepLR(optim, step_size=500, gamma=0.1)
+    optim = torch.optim.Adam([alpha], 1e-3)
+    # scheduler = StepLR(optim, step_size=300, gamma=0.9)
+    from torch.optim.lr_scheduler import CosineAnnealingLR
+    scheduler = CosineAnnealingLR(optim,
+                                T_max = 4000, # Maximum number of iterations.
+                                eta_min = 1e-4)
     loss_values = []
-    for iteration in range(3000):
+    for iteration in range(4000):
         w = cp.Variable(alpha.shape[0])
         alpha_fixed = alpha.squeeze().detach().numpy()
         A_0 = A0.numpy()
         A_1 = A1.numpy()
-
+        # import pdb; pdb.set_trace()
+        # Make sampling verify the expected values are the same.
         objective = cp.sum_squares(w - alpha_fixed)
-        restrictions = [A_0@ w == b0, A_1@ w == b1, w >= 0.3]
+        # more constrains on the optimization problem
+        # weights_features[:weights_features.shape[0]//2]@alpha > 0 
+        restrictions = [A_0@ w == b0, A_1@ w == b1, w>=0] # weights_features@ w >= 0]
         prob = cp.Problem(cp.Minimize(objective), restrictions)
         prob.solve()
         
@@ -195,7 +205,9 @@ if __name__ == '__main__':
     skewed_data["Creditability"] = y_0
     data["Creditability"] = y_0_raw
     counts = build_counts(skewed_data, levels, "Creditability")
-    weights_features = torch.zeros(counts.numel(), 8)
+    weights_features = torch.zeros(counts.numel(), 7)
+    # More expresive paramterization
+    #w >=1 because of inverse propensity weighting
     idx = 0
     for target in [0, 1]:
         for m, se in enumerate(["female", "male"]):
@@ -207,7 +219,7 @@ if __name__ == '__main__':
                                 credit_se_features[target*2 + m] = 1
                                 income_features = [0]*3
                                 income_features[j] = 1
-                                weights_features[idx] = torch.tensor(credit_se_features + income_features + [1]).float()
+                                weights_features[idx] = torch.tensor(credit_se_features + income_features ).float()
                                 idx += 1
 
     y00_female = sum((data["Creditability"] == 0) & (data["female"] == 1))
@@ -215,9 +227,7 @@ if __name__ == '__main__':
 
     y00_male = sum((data["Creditability"] == 0) & (data["male"] == 1))
     y01_male = sum((data["Creditability"] == 1) & (data["male"] == 1))
-
-    
-    
+   
     b0 = np.array([y00_female, y00_male])
     b1 = np.array([y01_female, y01_male])
 
@@ -233,10 +243,13 @@ if __name__ == '__main__':
     upper_bound = True
     max_bound, max_loss_values = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate)
 
+    c_time = datetime.datetime.now()
+    timestamp = str(c_time.timestamp())
+    timestamp = "_".join(timestamp.split("."))
 
     print(f"min:{float(min_bound)} , gt:{gt_ate},  max:{float(max_bound)}")
     plt.plot(min_loss_values)
     plt.plot(max_loss_values)
     plt.axhline(y=gt_ate, color='r', linestyle='-')
     plt.legend(["min", "max"])
-    plt.savefig("losses")
+    plt.savefig(f"losses_{timestamp}")
