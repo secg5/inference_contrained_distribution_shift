@@ -153,7 +153,7 @@ def run_search(A_0, A_1,data_count_1, data_count_0, weights_features, upper_boun
         restrictions = [A_0@ w == b0, A_1@ w == b1, weights_features@w >= 1]
         prob = cp.Problem(cp.Minimize(objective), restrictions)
         prob.solve()
-        
+
         alpha.data = torch.tensor(w.value).float()
         # Can I see how to change the weights to keep increasing/ decreasing the function
         # Sources of issue: Optimizer 
