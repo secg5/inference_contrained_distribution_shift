@@ -109,7 +109,7 @@ def simulate_multiple_outcomes(dataset_size: int, _feature_number:int = 4):
     # mu_0 = scipy.special.expit(X[:,1] - X[:,2] + X[:,3] - 2*A)
     mu_0 = scipy.special.expit(X[1] - X[3] - 2*A)
     y_0 = 1*(mu_0 > np.random.uniform(size=dataset_size))
-
+    # Being observed depends on sex and income
     obs = scipy.special.expit(X[3] - 3*A) > np.random.uniform(size=dataset_size)
     # Source of error? Should we being computing the ATE?
     yc_00 = np.mean(scipy.special.expit(X[1] - X[3]))
@@ -128,11 +128,11 @@ def create_dataframe(X, A):
     skewed_data[["female", "male"]] = pd.get_dummies(A)
     return skewed_data
 
-def run_search(A_0, A_1,data_count_1, data_count_0, weights_features, upper_bound, gt_ate):
+def run_search(A_0, A_1,data_count_1, data_count_0, weights_features, upper_bound, gt_ate, obs_prob):
     torch.autograd.set_detect_anomaly(True)
     alpha = torch.rand(weights_features.shape[1], requires_grad=True)
     W = np.unique(weights_features.numpy(), axis=0)
-    optim = torch.optim.Adam([alpha], 1e-6)
+    optim = torch.optim.Adam([alpha], 1e-4)
     # scheduler = StepLR(optim, step_size=300, gamma=0.9)
     # from torch.optim.lr_scheduler import CosineAnnealingLR
     # scheduler = CosineAnnealingLR(optim,
@@ -141,16 +141,28 @@ def run_search(A_0, A_1,data_count_1, data_count_0, weights_features, upper_boun
     loss_values = []
     for iteration in range(10000):
         # # Issue with proyection!!!!!!!!
-        
-        print(alpha)
+        # import pdb; pdb.set_trace()
+        # print(alpha)
         w = cp.Variable(alpha.shape[0])
         alpha_fixed = alpha.squeeze().detach().numpy()
         A_0 = A0.numpy()
         A_1 = A1.numpy()
         objective = cp.sum_squares(w - alpha_fixed)
-        # more constrains on the optimization problem
-        # weights_features[:weights_features.shape[0]//2]@alpha > 0 
-        restrictions = [A_0@ w == b0, A_1@ w == b1, weights_features@w >= 1]
+        # Fix a couple of strata restrictions and try to make it work.
+        # import pdb; pdb.set_trace()
+        # print(alpha)
+        inv_prop = 1/(obs_prob.numpy().flatten())
+        # parabola
+        # restrictions = [A_0@ w == b0, A_1@ w == b1, weights_features@w >= 1, inv_prop[8:24] == w[8:24], inv_prop[32:48] == w[32:48]]
+        # restrictions = [A_0@ w == b0, A_1@ w == b1, weights_features@w >= 1, inv_prop[:8] == w[:8], inv_prop[24:32] == w[24:32]]
+        # [["female", "male"], ["white", "non-white"], ["Age Bucket 1", "Age Bucket 2"], ["little", "moderate", "quite rich"]]
+        # restrictions = [A_0@ w == b0, A_1@ w == b1, weights_features@w >= 1, inv_prop[8:11] == w[8:11], inv_prop[32:35] == w[32:35]]
+        # restrictions = [A_0@ w == b0, A_1@ w == b1, weights_features@w >= 1, inv_prop[:3] == w[:3]]
+        # restrictions = [A_0@ w == b0, A_1@ w == b1, weights_features@w >= 1, inv_prop[4:] == w[4:]]
+        # restrictions = [A_0@ w == b0, A_1@ w == b1, weights_features@w >= 1, w[:24] == w[24:]]#inv_prop[16:24] == w[16:24], inv_prop[40:48] == w[40:48]]
+        restrictions = [A_0@ w == b0, A_1@ w == b1, weights_features@w >= 1, inv_prop[8:16] == w[8:16], inv_prop[32:40] == w[32:40]]
+        # restrictions = [A_0@ w == b0, A_1@ w == b1, weights_features@w >= 1, inv_prop[1:24] == w[1:24], inv_prop[25:] == w[25:]]
+
         prob = cp.Problem(cp.Minimize(objective), restrictions)
         prob.solve()
 
@@ -177,7 +189,7 @@ def run_search(A_0, A_1,data_count_1, data_count_0, weights_features, upper_boun
             loss = -ATE
         else:
             loss = ATE
-        loss_values.append(ATE.detach().numpy())
+        loss_values.append(float(ATE.detach().numpy()))
         if iteration % 500 == 0:
             print(f"ATE: {ATE.item()}, ground_truth {gt_ate}")
         
@@ -205,9 +217,12 @@ if __name__ == '__main__':
     
     skewed_data["Creditability"] = y_0
     data["Creditability"] = y_0_raw
+
+    raw_counts = build_counts(data, levels, "Creditability")
     counts = build_counts(skewed_data, levels, "Creditability")
     weights_features = torch.zeros(counts.numel(), 2*2*2*2*3)
 
+    obs_prob = counts/raw_counts
     # More expresive paramterization
     #w >=1 because of inverse propensity weighting
     idx = 0
@@ -262,10 +277,10 @@ if __name__ == '__main__':
     A0, A1 = build_strata_counts_matrix(weights_features, counts, ["female", "male"])
     
     # upper_bound = False
-    # min_bound, min_loss_values = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate)
+    # min_bound, min_loss_values = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate, obs_prob)
 
     upper_bound = True
-    max_bound, max_loss_values = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate)
+    max_bound, max_loss_values = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate, obs_prob)
 
     c_time = datetime.datetime.now()
     timestamp = str(c_time.timestamp())
@@ -273,6 +288,7 @@ if __name__ == '__main__':
 
     # print(f"min:{float(min_bound)} , gt:{gt_ate},  max:{float(max_bound)}")
     # plt.plot(min_loss_values)
+
     plt.plot(max_loss_values)
     # plt.axhline(y=gt_ate, color='r', linestyle='-')
     # plt.legend(["min", "max"])
