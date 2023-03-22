@@ -3,6 +3,7 @@
 import scipy
 import torch
 import itertools
+import datetime
 
 import pandas as pd
 import cvxpy as cp
@@ -109,32 +110,33 @@ def simulate_multiple_outcomes(dataset_size: int, _feature_number:int = 4):
     y1 = scipy.special.expit(2)*0.5 + scipy.special.expit(1)*0.3 + scipy.special.expit(0)*0.2
     ate = y1 - y0
 
-    return X, A, y_0, y_1, obs, ate
+    return X, A, y, obs, ate
     
 def create_dataframe(X, A):
     skewed_data = pd.DataFrame()
-    skewed_data[["white", "non-white"]] = pd.get_dummies(X[0])
-    skewed_data[["Age Bucket 1", "Age Bucket 2"]] = pd.get_dummies(X[1])
-    skewed_data[["own", "rent"]] = pd.get_dummies(X[2])
-    skewed_data[["little", "moderate", "quite rich"]] = pd.get_dummies(X[3])
+    skewed_data[["little", "moderate", "quite rich"]] = pd.get_dummies(X)
     skewed_data[["female", "male"]] = pd.get_dummies(A)
     return skewed_data
    
-def run_search(A_0, A_1,data_count_1, data_count_0, weights_features, upper_bound, gt_ate):
+def run_search(A_0, A_1,data_count_1, data_count_0, weights_features, upper_bound, gt_ate, obs_prob):
     torch.autograd.set_detect_anomaly(True)
     alpha = torch.rand(weights_features.shape[1], requires_grad=True)
     W = np.unique(weights_features.numpy(), axis=0)
     optim = torch.optim.Adam([alpha], lr=5e-4)
 
     loss_values = []
-    for iteration in range(100000):
+    for iteration in range(3000):
         w = cp.Variable(alpha.shape[0])
         alpha_fixed = alpha.squeeze().detach().numpy()
         A_0 = A0.numpy()
         A_1 = A1.numpy()
+        # Frank Wolfe methods (projection-free methods)
+        # try different random starts
+        # fix the data and randomly initialize the alpha and see what happens.
+        # Add Momentum
 
         objective = cp.sum_squares(w - alpha_fixed)
-        restrictions = [A_0@ w == b0, A_1@ w == b1, w >= 0]
+        restrictions = [A_0@ w == b0, A_1@ w == b1, weights_features@w >= 1]
         prob = cp.Problem(cp.Minimize(objective), restrictions)
         prob.solve()
         
@@ -173,31 +175,36 @@ def run_search(A_0, A_1,data_count_1, data_count_0, weights_features, upper_boun
 if __name__ == '__main__':
 
     DATASET_SIZE = 100000 
-    X_raw, A_raw, y_0_raw, y_1_raw, obs = simulate_multiple_outcomes(DATASET_SIZE)
-    X, A, y_0, y_1 = X_raw[obs], A_raw[obs], y_0_raw[obs], y_1_raw[obs]
+    X_raw, A_raw, y_raw, obs, gt_ate = simulate_multiple_outcomes(DATASET_SIZE)
+    X, A, y, = X_raw[obs], A_raw[obs], y_raw[obs]
 
     skewed_data = create_dataframe(X, A)
     data = create_dataframe(X_raw, A_raw)
 
-    levels = [["female", "male"], ["white", "non-white"], ["Age Bucket 1", "Age Bucket 2"], ["own", "rent"], ["little", "moderate", "quite rich"]]
+    levels = [["female", "male"], ["little", "moderate", "quite rich"]]
     
-    skewed_data["Creditability"] = y_0
-    data["Creditability"] = y_0_raw
+    skewed_data["Creditability"] = y
+    data["Creditability"] = y_raw
+    raw_counts = build_counts(data, levels, "Creditability")
     counts = build_counts(skewed_data, levels, "Creditability")
-    weights_features = torch.zeros(counts.numel(), 8)
+    obs_prob = counts/raw_counts
+
+    sex = 1
+    sex_base = 0
+    probs = raw_counts[1]/(raw_counts[1] + raw_counts[0])
+
+    total_weight_count = raw_counts[1][sex] + raw_counts[0][sex]
+    gt_ate = ((probs[sex_base] - probs[sex])*total_weight_count/total_weight_count.sum()).sum()
+    
+    weights_features = torch.zeros(counts.numel(), 12)
     idx = 0
     for target in [0, 1]:
         for m, se in enumerate(["female", "male"]):
-            for i, race in enumerate(["white", "non-white"]):
-                    for j, income in enumerate(["little", "moderate", "quite rich"]):
-                        for k, housing in enumerate(["own", "rent"]):
-                            for l, age in enumerate(['Age Bucket 1', 'Age Bucket 2']):
-                                credit_se_features = [0]*4
-                                credit_se_features[target*2 + m] = 1
-                                income_features = [0]*3
-                                income_features[j] = 1
-                                weights_features[idx] = torch.tensor(credit_se_features + income_features + [1]).float()
-                                idx += 1
+            for j, income in enumerate(["little", "moderate", "quite rich"]):
+                features = [0]*(2*2*3)
+                features[idx] = 1
+                weights_features[idx] = torch.tensor(features).float()
+                idx += 1
 
     y00_female = sum((data["Creditability"] == 0) & (data["female"] == 1))
     y01_female = sum((data["Creditability"] == 1) & (data["female"] == 1))
@@ -206,28 +213,28 @@ if __name__ == '__main__':
     y01_male = sum((data["Creditability"] == 1) & (data["male"] == 1))
 
     
-    
     b0 = np.array([y00_female, y00_male])
     b1 = np.array([y01_female, y01_male])
 
     data_count_0 = counts[0]
     data_count_1 = counts[1]
 
-    yc_00 = np.mean(scipy.special.expit(X[1] - X[2] + X[3]))
-    yc_01 = np.mean(scipy.special.expit(X[1] - X[2] + X[3] - 2))
-
-    gt_ate = (yc_00 - yc_01)
-
     A0, A1 = build_strata_counts_matrix(weights_features, counts, ["female", "male"])
+    
+    for i in range(1):
+        upper_bound = True
+        max_bound, max_loss_values = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate, obs_prob)
 
-    upper_bound = True
-    max_bound, min_loss_values = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate)
+        upper_bound = False
+        min_bound, min_loss_values = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate, obs_prob)
 
-    upper_bound = False
-    min_bound, max_loss_values = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate)
+        c_time = datetime.datetime.now()
+        timestamp = str(c_time.timestamp())
+        timestamp = "_".join(timestamp.split("."))
 
-    print(f"min:{float(min_bound)} , gt:{gt_ate},  max:{float(max_bound)}")
-    plt.plot(min_loss_values)
-    plt.plot(max_loss_values)
-    plt.legend(["min", "max"])
-    plt.savefig("losses")
+        print(f"min:{float(min_bound)} , gt:{gt_ate},  max:{float(max_bound)}")
+        plt.plot(min_loss_values)
+        plt.plot(max_loss_values)
+        plt.axhline(y=gt_ate, color='r', linestyle='-')
+        plt.legend(["min", "max"])
+        plt.savefig(f"losses_{timestamp}")
