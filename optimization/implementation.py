@@ -9,6 +9,7 @@ import pandas as pd
 import cvxpy as cp
 import numpy as np
 import matplotlib.pyplot as plt
+from torch.optim.lr_scheduler import StepLR
 
 from typing import List
     
@@ -122,8 +123,8 @@ def run_search(A_0, A_1,data_count_1, data_count_0, weights_features, upper_boun
     torch.autograd.set_detect_anomaly(True)
     alpha = torch.rand(weights_features.shape[1], requires_grad=True)
     W = np.unique(weights_features.numpy(), axis=0)
-    optim = torch.optim.Adam([alpha], lr=5e-4)
-
+    optim = torch.optim.Adam([alpha], 0.01)
+    scheduler = StepLR(optim, step_size=500, gamma=0.1)
     loss_values = []
     for iteration in range(3000):
         w = cp.Variable(alpha.shape[0])
@@ -165,6 +166,7 @@ def run_search(A_0, A_1,data_count_1, data_count_0, weights_features, upper_boun
         optim.zero_grad()
         loss.backward()
         optim.step()
+        scheduler.step()
 
     if upper_bound:
         ret = max(loss_values)
@@ -221,7 +223,7 @@ if __name__ == '__main__':
 
     A0, A1 = build_strata_counts_matrix(weights_features, counts, ["female", "male"])
     
-    for i in range(1):
+    for i in range(5):
         upper_bound = True
         max_bound, max_loss_values = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate, obs_prob)
 
