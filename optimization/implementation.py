@@ -93,26 +93,23 @@ def simulate_multiple_outcomes(dataset_size: int, _feature_number:int = 4):
     Returns:
         _type_: _description_
     """
-    X = np.random.multivariate_normal(mean=np.zeros(4), cov=np.identity(4), size = dataset_size)
-   
+    
+    X = np.random.choice(a=[0, 1, 2], size=dataset_size, p=[0.5, 0.3, 0.2])
 
-    pi_x = scipy.special.expit((2*X[:,0] - 4*X[:,1] + 2*X[:,2] - X[:,3])/4)
-    A = 1*(pi_x > np.random.uniform(size=dataset_size))
+    pi_A = scipy.special.expit(X)
 
-    mu_0 = scipy.special.expit(X[:,1] - X[:,2] + X[:,3] - 2*A)
-    y_0 = 1*(mu_0 > np.random.uniform(size=dataset_size))
+    A = 1*(pi_A > np.random.uniform(size=dataset_size))
 
-    mu_1 = scipy.special.expit(X[:,0] + X[:,2] - X[:,3])
-    y_1 = 1*(mu_1 > np.random.uniform(size=dataset_size))
+    mu = scipy.special.expit(2*A - X)
+    y = 1*(mu > np.random.uniform(size=dataset_size))
 
-    obs = scipy.special.expit(X[:,3] - 3*A) > np.random.uniform(size=dataset_size)
+    obs = scipy.special.expit(X + A) > np.random.uniform(size=dataset_size)
+    
+    y0 = scipy.special.expit(0)*0.5 + scipy.special.expit(1)*0.3 + scipy.special.expit(2)*0.2
+    y1 = scipy.special.expit(2)*0.5 + scipy.special.expit(1)*0.3 + scipy.special.expit(0)*0.2
+    ate = y1 - y0
 
-    X = pd.DataFrame([pd.cut(X[:,0], [-np.inf, 0, np.inf]).codes,
-                    pd.cut(X[:,1], [-np.inf, 1, np.inf]).codes,
-                    pd.cut(X[:,2], [-np.inf, -1, np.inf]).codes,
-                    pd.cut(X[:,3], [-np.inf, -1, 1, np.inf]).codes]).T
-
-    return X, A, y_0, y_1, obs
+    return X, A, y_0, y_1, obs, ate
     
 def create_dataframe(X, A):
     skewed_data = pd.DataFrame()
