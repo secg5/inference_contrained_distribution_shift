@@ -130,13 +130,27 @@ def compute_ATE(counts_1, counts_0):
     ATE = ((probs[sex_base] - probs[sex])*total_weight_count/total_weight_count.sum()).sum()
     return ATE
 
-# def compute_debias_ate(counts_1, counts_0):
-#     """_summary_
+def propensity_score_matching(weights_0, weights_1, data):
+    """_summary_
 
-#     Args:
-#         counts_1 (_type_): _description_
-#         counts_0 (_type_): _description_
-#     """
+    Args:
+        weights_1 (_type_): _description_
+        weights_2 (_type_): _description_
+    """
+    #  TODO (debug)
+    weights = np.zeros(data.shape[0])
+    for index, row  in data.iterrows():
+        if row["Creditability"] == 0 & row["female"] == 1:
+            weights[index] = weights_0[0]
+        elif row["Creditability"] == 0 & row["female"] == 0:
+            weights[index] = weights_0[1]
+        elif row["Creditability"] == 1 & row["male"] == 0:
+            weights[index] = weights_1[0]
+        else:
+            weights[index] = weights_1[1]
+    return weights
+    
+    
 
    
 def run_search(A_0, A_1,data_count_1, data_count_0, weights_features, upper_bound, gt_ate, obs_prob):
@@ -221,18 +235,36 @@ if __name__ == '__main__':
                     weights_features[idx] = torch.tensor(features).float()
                     idx += 1
     
+    # Should I playa round with different restrictions?
     y00_female = sum((data["Creditability"] == 0) & (data["female"] == 1))
     y01_female = sum((data["Creditability"] == 1) & (data["female"] == 1))
 
     y00_male = sum((data["Creditability"] == 0) & (data["male"] == 1))
     y01_male = sum((data["Creditability"] == 1) & (data["male"] == 1))
 
+    bias_y00_female = sum((skewed_data["Creditability"] == 0) & (skewed_data["female"] == 1))
+    bias_y01_female = sum((skewed_data["Creditability"] == 1) & (skewed_data["female"] == 1))
+
+    bias_y00_male = sum((skewed_data["Creditability"] == 0) & (skewed_data["male"] == 1))
+    bias_y01_male = sum((skewed_data["Creditability"] == 1) & (skewed_data["male"] == 1))
+
     
     b0 = np.array([y00_female, y00_male])
     b1 = np.array([y01_female, y01_male])
 
+    obs_b0 = np.array([bias_y00_female, bias_y00_male])
+    obs_b1 = np.array([bias_y01_female, bias_y01_male])
+    
+
+    weights_0 = obs_b0/b0
+    weights_1 = obs_b1/b1
+
+    observed_weights = propensity_score_matching(weights_0, weights_1, skewed_data)
+
     data_count_0 = counts[0]
     data_count_1 = counts[1]
+
+    
 
     A0, A1 = build_strata_counts_matrix(weights_features, counts, ["female", "male"])
 
@@ -265,8 +297,11 @@ if __name__ == '__main__':
     one_aux = (1 - A)*(1/(1-empirical_probs))
     
     EMPIRICAL_IPW = -(y*(aux - one_aux)).mean()
-    
-    
+    import pdb; pdb.set_trace()
+    aux = A*(1/observed_weights)
+    one_aux = (1 - A)*(1/(1-observed_weights))
+    NAIVE_IPW = -(y*(aux - one_aux)).mean()
+
     for i in range(1):
         upper_bound = True
         max_bound, max_loss_values, alpha_max = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate, obs_prob)
@@ -283,9 +318,10 @@ if __name__ == '__main__':
         plt.plot(min_loss_values)
         plt.plot(max_loss_values)
         plt.axhline(y=gt_ate, color='r', linestyle='-')
+        # why they are so close?
         plt.axhline(y=empirical_ate, color='black', linestyle='-')
         plt.axhline(y=IPW, color='g', linestyle='dashed')
-        # plt.axhline(y=EMPIRICAL_IPW, color='g', linestyle='dashed')
+        plt.axhline(y=NAIVE_IPW, color='olive', linestyle='dashed')
         # plt.axhline(y=IPW_ATE_2, color='black', linestyle='dashed')
         plt.legend(["min", "max"])
         plt.savefig(f"losses_{timestamp}")
