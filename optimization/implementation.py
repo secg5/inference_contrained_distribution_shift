@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 from torch.optim.lr_scheduler import StepLR
 
 from typing import List
-    
+
 def build_counts(data : pd.DataFrame, levels: List[List], target:str):
     """
     Given a dummie variable dataset it return a matrix counts
@@ -97,27 +97,90 @@ def simulate_multiple_outcomes(dataset_size: int, _feature_number:int = 4):
     """
     
     X = np.random.choice(a=[0, 1, 2], size=dataset_size, p=[0.5, 0.3, 0.2])
+    X_2 =np.random.binomial(size=dataset_size, n=1, p=0.4)
 
-    pi_A = scipy.special.expit(X)
-
+    # Changes ORIGINAL ONE X - X_2
+    pi_A = scipy.special.expit(X_2 - X)
     A = 1*(pi_A > np.random.uniform(size=dataset_size))
 
-    mu = scipy.special.expit(2*A - X)
+    mu = scipy.special.expit(2*A - X + X_2)
     y = 1*(mu > np.random.uniform(size=dataset_size))
 
-    obs = scipy.special.expit(X + A) > np.random.uniform(size=dataset_size)
-    
-    y0 = scipy.special.expit(0)*0.5 + scipy.special.expit(1)*0.3 + scipy.special.expit(2)*0.2
-    y1 = scipy.special.expit(2)*0.5 + scipy.special.expit(1)*0.3 + scipy.special.expit(0)*0.2
-    ate = y1 - y0
+    # Changes ORIGINAL ONE X + X_2
+    obs = scipy.special.expit(X - X_2) > np.random.uniform(size=dataset_size)
+    X_total = np.stack((X, X_2), axis=-1)
 
-    return X, A, y, obs, ate
+    return X_total, A, y, obs
     
 def create_dataframe(X, A):
     skewed_data = pd.DataFrame()
-    skewed_data[["little", "moderate", "quite rich"]] = pd.get_dummies(X)
+    skewed_data[["little", "moderate", "quite rich"]] = pd.get_dummies(X[:,0])
+    skewed_data[["White", "Non White"]] = pd.get_dummies(X[:,1])
     skewed_data[["female", "male"]] = pd.get_dummies(A)
     return skewed_data
+
+
+def compute_ATE(counts_1, counts_0):
+    """Compute the ATE for a given dataset."""
+    # int_x (p(y|x, A=0) - p(y|x, A=1))p(x)
+    sex = 1
+    sex_base = 0
+    
+    probs = counts_1/(counts_1 + counts_0)
+
+    total_weight_count = counts_1 + counts_0
+    ATE = ((probs[sex_base] - probs[sex])*total_weight_count/total_weight_count.sum()).sum()
+    return ATE
+
+def compute_conditional_ATE(counts_1, counts_0):
+    """Compute the conditional ATE for a given dataset."""
+    # int_x (p(y|x, A=0) - p(y|x, A=1))p(x|A=1)
+    sex = 1
+    sex_base = 0
+    
+    probs = counts_1/(counts_1 + counts_0)
+
+    total_weight_count = counts_1[sex] + counts_0[sex]
+    c_ATE = ((probs[sex_base] - probs[sex])*total_weight_count/total_weight_count.sum()).sum()
+    return c_ATE
+
+def compute_ate_ipw(A, propensity_scores, y):
+    """Computes the ate using inverse propensity weighting.
+
+    Args:
+        A (_type_): _description_
+        propensity_scores (_type_): _description_
+        y (_type_): _description_
+    """
+    ipw_1 = A*(1/propensity_scores)
+    ipw_0 = (1 - A)*(1/(1-propensity_scores))
+    # TODO (Santiago), check the minus.
+    ate = -(y*(ipw_1 - ipw_0)).mean()
+    return ate
+
+
+def propensity_score_matching(weights_0, weights_1, data):
+    """_summary_
+
+    Args:
+        weights_1 (_type_): _description_
+        weights_2 (_type_): _description_
+    """
+    #  TODO (debug)
+    weights = np.zeros(data.shape[0])
+    for index, row  in data.iterrows():
+        if row["Creditability"] == 0 & row["female"] == 1:
+            weights[index] = weights_0[0]
+        elif row["Creditability"] == 0 & row["female"] == 0:
+            weights[index] = weights_0[1]
+        elif row["Creditability"] == 1 & row["male"] == 0:
+            weights[index] = weights_1[0]
+        else:
+            weights[index] = weights_1[1]
+    return weights
+    
+    
+
    
 def run_search(A_0, A_1,data_count_1, data_count_0, weights_features, upper_bound, gt_ate, obs_prob):
     torch.autograd.set_detect_anomaly(True)
@@ -126,7 +189,7 @@ def run_search(A_0, A_1,data_count_1, data_count_0, weights_features, upper_boun
     optim = torch.optim.Adam([alpha], 0.01)
     scheduler = StepLR(optim, step_size=500, gamma=0.1)
     loss_values = []
-    for iteration in range(3000):
+    for iteration in range(2000):
         w = cp.Variable(alpha.shape[0])
         alpha_fixed = alpha.squeeze().detach().numpy()
         A_0 = A0.numpy()
@@ -150,13 +213,7 @@ def run_search(A_0, A_1,data_count_1, data_count_0, weights_features, upper_boun
         weighted_counts_1 = weights_y1*data_count_1
         weighted_counts_0 = weights_y0*data_count_0
 
-        sex = 1
-        sex_base = 0
-        
-        probs = weighted_counts_1/(weighted_counts_1 + weighted_counts_0)
-
-        total_weight_count = weighted_counts_1[sex] + weighted_counts_0[sex]
-        ATE = ((probs[sex_base] - probs[sex])*total_weight_count/total_weight_count.sum()).sum()
+        ATE = compute_ATE(weighted_counts_1, weighted_counts_0)
         
         loss = -ATE if upper_bound else ATE
         loss_values.append(ATE.detach().numpy())
@@ -172,18 +229,21 @@ def run_search(A_0, A_1,data_count_1, data_count_0, weights_features, upper_boun
         ret = max(loss_values)
     else:
         ret = min(loss_values)
-    return ret, loss_values
+    return ret, loss_values, alpha
+
+
 
 if __name__ == '__main__':
 
     DATASET_SIZE = 100000 
-    X_raw, A_raw, y_raw, obs, gt_ate = simulate_multiple_outcomes(DATASET_SIZE)
+    X_raw, A_raw, y_raw, obs = simulate_multiple_outcomes(DATASET_SIZE)
     X, A, y, = X_raw[obs], A_raw[obs], y_raw[obs]
+    # import pdb; pdb.set_trace()
 
     skewed_data = create_dataframe(X, A)
     data = create_dataframe(X_raw, A_raw)
 
-    levels = [["female", "male"], ["little", "moderate", "quite rich"]]
+    levels = [["female", "male"], ["White", "Non White"], ["little", "moderate", "quite rich"]]
     
     skewed_data["Creditability"] = y
     data["Creditability"] = y_raw
@@ -191,52 +251,98 @@ if __name__ == '__main__':
     counts = build_counts(skewed_data, levels, "Creditability")
     obs_prob = counts/raw_counts
 
-    sex = 1
-    sex_base = 0
-    probs = raw_counts[1]/(raw_counts[1] + raw_counts[0])
-
-    total_weight_count = raw_counts[1][sex] + raw_counts[0][sex]
-    gt_ate = ((probs[sex_base] - probs[sex])*total_weight_count/total_weight_count.sum()).sum()
+    gt_ate = compute_ATE(raw_counts[1], raw_counts[0])
+    empirical_ate = compute_ATE(counts[1], counts[0])
     
-    weights_features = torch.zeros(counts.numel(), 12)
+    weights_features = torch.zeros(counts.numel(), 24)
     idx = 0
+    
     for target in [0, 1]:
         for m, se in enumerate(["female", "male"]):
             for j, income in enumerate(["little", "moderate", "quite rich"]):
-                features = [0]*(2*2*3)
-                features[idx] = 1
-                weights_features[idx] = torch.tensor(features).float()
-                idx += 1
-
+                for i, race in enumerate(["White", "Non White"]):
+                    features = [0]*(2*2*3*2)
+                    features[idx] = 1
+                    weights_features[idx] = torch.tensor(features).float()
+                    # weights_features[idx] = torch.tensor(features + features_race).float()
+                    idx += 1
+    
+    # Should I playa round with different restrictions?
     y00_female = sum((data["Creditability"] == 0) & (data["female"] == 1))
     y01_female = sum((data["Creditability"] == 1) & (data["female"] == 1))
 
     y00_male = sum((data["Creditability"] == 0) & (data["male"] == 1))
     y01_male = sum((data["Creditability"] == 1) & (data["male"] == 1))
 
+    bias_y00_female = sum((skewed_data["Creditability"] == 0) & (skewed_data["female"] == 1))
+    bias_y01_female = sum((skewed_data["Creditability"] == 1) & (skewed_data["female"] == 1))
+
+    bias_y00_male = sum((skewed_data["Creditability"] == 0) & (skewed_data["male"] == 1))
+    bias_y01_male = sum((skewed_data["Creditability"] == 1) & (skewed_data["male"] == 1))
+
     
     b0 = np.array([y00_female, y00_male])
     b1 = np.array([y01_female, y01_male])
 
+    obs_b0 = np.array([bias_y00_female, bias_y00_male])
+    obs_b1 = np.array([bias_y01_female, bias_y01_male])
+    
+
+    weights_0 = obs_b0/b0
+    weights_1 = obs_b1/b1
+
+    observed_weights = propensity_score_matching(weights_0, weights_1, skewed_data)
+
     data_count_0 = counts[0]
     data_count_1 = counts[1]
 
-    A0, A1 = build_strata_counts_matrix(weights_features, counts, ["female", "male"])
     
-    for i in range(5):
+
+    A0, A1 = build_strata_counts_matrix(weights_features, counts, ["female", "male"])
+
+    true_inverse_propensity_weighting = scipy.special.expit(X[:,0] - X[:,1]) 
+
+
+    # Code generated by Chat GPT
+    # find unique values of each feature
+    unique_vals = [np.unique(X[:, i]) for i in range(X.shape[1])]
+
+    # calculate the frequency of occurrence of each combination of feature values
+    counts = np.zeros([len(unique_vals[0]), len(unique_vals[1])])
+    for i in range(X.shape[0]):
+        counts[X[i,0], X[i,1]] += 1
+
+    # normalize the counts to obtain empirical probabilities
+    probs = counts / np.sum(counts)
+
+    # assign each probability to its corresponding row in the original array
+    empirical_probs = np.zeros([X.shape[0]])
+    for i in range(X.shape[0]):
+        empirical_probs[i] = probs[X[i,0], X[i,1]]
+
+    IPW = compute_ate_ipw(A, true_inverse_propensity_weighting, y)
+    EMPIRICAL_IPW = compute_ate_ipw(A, empirical_probs, y)
+    NAIVE_IPW = compute_ate_ipw(A, observed_weights, y)
+
+    for i in range(1):
         upper_bound = True
-        max_bound, max_loss_values = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate, obs_prob)
+        max_bound, max_loss_values, alpha_max = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate, obs_prob)
 
         upper_bound = False
-        min_bound, min_loss_values = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate, obs_prob)
+        min_bound, min_loss_values, alpha_min = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate, obs_prob)
 
         c_time = datetime.datetime.now()
         timestamp = str(c_time.timestamp())
         timestamp = "_".join(timestamp.split("."))
 
+
         print(f"min:{float(min_bound)} , gt:{gt_ate},  max:{float(max_bound)}")
         plt.plot(min_loss_values)
         plt.plot(max_loss_values)
-        plt.axhline(y=gt_ate, color='r', linestyle='-')
         plt.legend(["min", "max"])
-        plt.savefig(f"losses_{timestamp}")
+        plt.axhline(y=gt_ate, color='r', linestyle='-')
+        plt.axhline(y=empirical_ate, color='black', linestyle='-')
+        plt.axhline(y=IPW, color='g', linestyle='dashed')
+        plt.axhline(y=EMPIRICAL_IPW, color='cyan', linestyle='dashed')
+        plt.axhline(y=NAIVE_IPW, color='olive', linestyle='dashed')
+    plt.savefig(f"losses_{timestamp}")
