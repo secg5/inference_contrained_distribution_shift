@@ -226,7 +226,6 @@ def prpensity_scores_by_strata(levels):
 def run_search(A_0, A_1,data_count_1, data_count_0, weights_features, upper_bound, gt_ate, propensity_scores):
     torch.autograd.set_detect_anomaly(True)
     alpha = torch.rand(weights_features.shape[1], requires_grad=True)
-    W = np.unique(weights_features.numpy(), axis=0)
     optim = torch.optim.Adam([alpha], 0.01)
     scheduler = StepLR(optim, step_size=500, gamma=0.1)
     loss_values = []
@@ -315,7 +314,7 @@ if __name__ == '__main__':
     gt_ate = compute_conditional_ATE(raw_counts[1], raw_counts[0])
     empirical_ate = compute_conditional_ATE(counts[1], counts[0])
     
-    weights_features = torch.zeros(counts.numel(), 12)
+    weights_features = torch.zeros(counts.numel(), 24)
     idx = 0
     
     for target in [0, 1]:
@@ -323,8 +322,8 @@ if __name__ == '__main__':
         for m, se in enumerate(["female", "male"]):
             for j, income in enumerate(["little", "moderate", "quite rich"]):
                 for i, race in enumerate(["White", "Non White"]):
-                    features = [0]*(2*3*2)
-                    features[index_aux] = 1
+                    features = [0]*(2*2*3*2)
+                    features[idx] = 1
                     weights_features[idx] = torch.tensor(features).float()
                     # weights_features[idx] = torch.tensor(features + features_race).float()
                     idx += 1 
