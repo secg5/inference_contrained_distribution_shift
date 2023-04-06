@@ -41,7 +41,7 @@ def build_counts(data : pd.DataFrame, levels: List[List], target:str):
                 if row[feature] == 1:
                    position[index + 1] = index_j
         count[tuple(position)] += 1
-    # Machetimbis para que después no me estallen los gradientes
+
     count[count == 0] = 0.00001
     return count       
 
@@ -80,14 +80,12 @@ def build_strata_counts_matrix(weight_features: torch.Tensor,
         features = weight_features[level*t.shape[0]:(level + 1)*t.shape[0]]        
         y_0_ground_truth[level] = (features*t).sum(dim=0)
 
-        
+    
     for level in range(level_size):
         # Flaw here only works with the first level.
         t_ = data_count_1[level].flatten().unsqueeze(1)    
-        features_ = weight_features[weight_features.shape[0]//2 + level*t.shape[0]:weight_features.shape[0]//2 + (level + 1)*t.shape[0]]        
+        features_ = weight_features[level*t.shape[0]:(level + 1)*t.shape[0]]        
         y_1_ground_truth[level] = (features_*t_).sum(dim=0)
-        
-
     return y_0_ground_truth, y_1_ground_truth
 
 def simulate_multiple_outcomes(dataset_size: int, _feature_number:int = 4):
@@ -106,7 +104,6 @@ def simulate_multiple_outcomes(dataset_size: int, _feature_number:int = 4):
     # Changes ORIGINAL ONE X - X_2
     pi_A = scipy.special.expit(X_2 - X)
     A = 1*(pi_A > np.random.uniform(size=dataset_size))
-
     mu = scipy.special.expit(2*A - X + X_2)
     y = 1*(mu > np.random.uniform(size=dataset_size))
 
@@ -124,17 +121,17 @@ def create_dataframe(X, A):
     return skewed_data
 
 
-# def compute_ATE(counts_1, counts_0):
-#     """Computes the ATE for a given dataset."""
-#     # int_x (p(y|x, A = 0, R = 1) - p(y|x, A = 1, R = 1))p(x)
-#     sex = 1
-#     sex_base = 0
+def compute_ATE(counts_1, counts_0):
+    """Computes the ATE for a given dataset."""
+    # int_x (p(y|x, A = 0, R = 1) - p(y|x, A = 1, R = 1))p(x|A =1)
+    sex = 1
+    sex_base = 0
     
-#     probs = counts_1/(counts_1 + counts_0)
+    probs = counts_1/(counts_1 + counts_0)
 
-#     prob_x = counts_0[sex] + counts_0[sex_base]+ counts_1[sex] + counts_1[sex_base]
-#     ATE = ((probs[sex_base])*prob_x/prob_x.sum()).sum()
-#     return ATE
+    prob_x = counts_0[sex] + counts_0[sex_base]+ counts_1[sex] + counts_1[sex_base]
+    ATE = ((probs[sex_base])*prob_x/prob_x.sum()).sum()
+    return ATE
 
 def compute_conditional_ATE(counts_1, counts_0):
     """Computes the conditional ATE for a given dataset."""
@@ -148,7 +145,7 @@ def compute_conditional_ATE(counts_1, counts_0):
     c_ATE = ((probs[sex] - probs[sex_base])*total_weight_count/total_weight_count.sum()).sum()
     return c_ATE
 
-def compute_debias_ate_ipw(A, propensity_scores_A, propensity_scores_R, y, obs):
+def compute_debias_ate_ipw():
     """Computes the ate using inverse propensity weighting.
 
     Args:
@@ -159,12 +156,30 @@ def compute_debias_ate_ipw(A, propensity_scores_A, propensity_scores_R, y, obs):
     Returns
         ate: Averga treatment effect.
     """
-    propensity_score = propensity_scores_A*propensity_scores_R
-    propensity_score_0 = (1-propensity_scores_A)*( 1 - propensity_scores_R)
-    ipw_1 = A*obs*(1/propensity_score)
-    ipw_0 = (1 - A)*(1/propensity_score_0)
-    ate = (y*ipw_1).mean()
-    return ate
+    # X = np.random.choice(a=[0, 1, 2], size=dataset_size, p=[0.5, 0.3, 0.2])
+    # X_2 =np.random.binomial(size=dataset_size, n=1, p=0.4)
+
+    # # Changes ORIGINAL ONE X - X_2
+    # pi_A = scipy.special.expit(X_2 - X)
+    # A = 1*(pi_A > np.random.uniform(size=dataset_size))
+
+    # mu = scipy.special.expit(2*A - X + X_2)
+    # y = 1*(mu > np.random.uniform(size=dataset_size))
+
+    # # Changes ORIGINAL ONE X + X_2
+    # obs = scipy.special.expit(X - X_2) > np.random.uniform(size=dataset_size)
+    # X_total = np.stack((X, X_2), axis=-1)
+    y0_gt = scipy.special.expit(0)*(0.5*0.6) + scipy.special.expit(-1)*(0.6*0.3) + scipy.special.expit(-2)*(0.2*0.6) + scipy.special.expit(1)*(0.5*0.4) + scipy.special.expit(0)*(0.3*0.4) + scipy.special.expit(-1)*(0.2*0.4)
+    y1_gt = scipy.special.expit(2)*(0.5*0.6) + scipy.special.expit(1)*(0.6*0.3) + scipy.special.expit(0)*(0.2*0.6) + scipy.special.expit(3)*(0.5*0.4) + scipy.special.expit(2)*(0.3*0.4) + scipy.special.expit(1)*(0.2*0.4)
+
+    # px_1 = [0.5, 0.3, 0.2]
+    # px_2 = [0.6, 0,4]
+    # for i in range(3):
+    #     for j in range(2):
+    #         y0_gt += scipy.special.expit( - i + j)*(px_1[i]*px_2[j])
+    #         y1_gt += scipy.special.expit(2 - i + j )*(px_1[i]*px_2[j])
+
+    return y1_gt - y0_gt
 
 def compute_ate_ipw(A, propensity_scores, y):
     """Computes the ate using inverse propensity weighting.
@@ -179,7 +194,7 @@ def compute_ate_ipw(A, propensity_scores, y):
     """
     ipw_1 = A*(1/propensity_scores)
     ipw_0 = (1 - A)*(1/(1-propensity_scores))
-    ate = (y*ipw_1).mean()
+    ate = (y*ipw_1 - y*ipw_0).mean()
     return ate
 
 
@@ -224,22 +239,23 @@ def prpensity_scores_by_strata(levels):
     return propensity_scores
    
 def run_search(A_0, A_1,data_count_1, data_count_0, weights_features, upper_bound, gt_ate, propensity_scores):
+    prop_scores_0 = 1/(1-propensity_scores)
+    prop_scores_1 = 1/propensity_scores
     torch.autograd.set_detect_anomaly(True)
     alpha = torch.rand(weights_features.shape[1], requires_grad=True)
     optim = torch.optim.Adam([alpha], 0.01)
-    scheduler = StepLR(optim, step_size=500, gamma=0.1)
+    # scheduler = StepLR(optim, step_size=500, gamma=0.1)
+    dataset_size = counts.sum()
     loss_values = []
-    for iteration in range(2000):
-        w = cp.Variable(alpha.shape[0])
+    for iteration in range(10000):
+        w = cp.Variable(weights_features.shape[1])
         alpha_fixed = alpha.squeeze().detach().numpy()
         A_0 = A0.numpy()
         A_1 = A1.numpy()
-        # Frank Wolfe methods (projection-free methods)
-        # try different random starts
-        # fix the data and randomly initialize the alpha and see what happens.
-        # Add Momentum
 
+        # import pdb; pdb.set_trace()
         objective = cp.sum_squares(w - alpha_fixed)
+
         restrictions = [A_0@ w == b0, A_1@ w == b1, weights_features@w >= 1]
         prob = cp.Problem(cp.Minimize(objective), restrictions)
         prob.solve()
@@ -247,16 +263,15 @@ def run_search(A_0, A_1,data_count_1, data_count_0, weights_features, upper_boun
         
         alpha.data = torch.tensor(w.value).float()
 
-        weights_y0 = (weights_features[:weights_features.shape[0]//2]@alpha).reshape(*data_count_0.shape)
-        weights_y1 = (weights_features[weights_features.shape[0]//2:]@alpha).reshape(*data_count_1.shape)
+        
+        weights_y1 = (weights_features@alpha).reshape(*data_count_1.shape)
         
         weighted_counts_1 = weights_y1*data_count_1
-        weighted_counts_0 = weights_y0*data_count_0
         
-        sex=1
-    
-        # ATE = (propensity_scores * (1/weighted_counts_1[sex])).mean()
-        ATE = compute_conditional_ATE(weighted_counts_1, weighted_counts_0)
+        w_counts_1 = weighted_counts_1[1] 
+        w_counts_0 =  weighted_counts_1[0]
+        # N is known as it can be looked up from where the b were gathered.
+        ATE = ((prop_scores_1*w_counts_1).sum() - (prop_scores_0*w_counts_0).sum())/DATASET_SIZE
         
         loss = -ATE if upper_bound else ATE
         loss_values.append(ATE.detach().numpy())
@@ -266,7 +281,7 @@ def run_search(A_0, A_1,data_count_1, data_count_0, weights_features, upper_boun
         optim.zero_grad()
         loss.backward()
         optim.step()
-        scheduler.step()
+        # scheduler.step()
 
     if upper_bound:
         ret = max(loss_values)
@@ -274,7 +289,7 @@ def run_search(A_0, A_1,data_count_1, data_count_0, weights_features, upper_boun
         ret = min(loss_values)
     return ret, loss_values, alpha
 
-def empirical_propensity_score(X):
+def empirical_propensity_score(X, A):
     # it s wrong
     # Code generated by Chat GPT
     # find unique values of each feature
@@ -282,11 +297,14 @@ def empirical_propensity_score(X):
     
     # calculate the frequency of occurrence of each combination of feature values
     counts = np.zeros([len(unique_vals[0]), len(unique_vals[1])])
+    tot_counts = np.zeros([len(unique_vals[0]), len(unique_vals[1])])
     for i in range(X.shape[0]):
-        counts[X[i,0], X[i,1]] += 1
+        if A[i] == 1:
+            counts[X[i,0], X[i,1]] += 1
+        tot_counts[X[i,0], X[i,1]] += 1
 
     # normalize the counts to obtain empirical probabilities
-    probs = counts / np.sum(counts)
+    probs = counts / tot_counts
 
     # assign each probability to its corresponding row in the original array
     empirical_probs = np.zeros([X.shape[0]])
@@ -314,22 +332,18 @@ if __name__ == '__main__':
     gt_ate = compute_conditional_ATE(raw_counts[1], raw_counts[0])
     empirical_ate = compute_conditional_ATE(counts[1], counts[0])
     
-    weights_features = torch.zeros(counts.numel(), 24)
+    weights_features = torch.zeros(12, 12)
     idx = 0
     
-    for target in [0, 1]:
-        index_aux = 0
-        for m, se in enumerate(["female", "male"]):
-            for j, income in enumerate(["little", "moderate", "quite rich"]):
-                for i, race in enumerate(["White", "Non White"]):
-                    features = [0]*(2*2*3*2)
-                    features[idx] = 1
-                    weights_features[idx] = torch.tensor(features).float()
-                    # weights_features[idx] = torch.tensor(features + features_race).float()
-                    idx += 1 
-                    index_aux += 1
-    
-    # Should I playa round with different restrictions?
+    for m, se in enumerate(["female", "male"]):
+        for j, income in enumerate(["little", "moderate", "quite rich"]):
+            for i, race in enumerate(["White", "Non White"]):
+                features = [0]*(2*3*2)
+                features[idx] = 1
+                weights_features[idx] = torch.tensor(features).float()
+                # weights_features[idx] = torch.tensor(features + features_race).float()
+                idx += 1 
+
     y00_female = sum((data["Creditability"] == 0) & (data["female"] == 1))
     y01_female = sum((data["Creditability"] == 1) & (data["female"] == 1))
 
@@ -360,6 +374,7 @@ if __name__ == '__main__':
     
 
     A0, A1 = build_strata_counts_matrix(weights_features, counts, ["female", "male"])
+    
     # Changes ORIGINAL ONE X - X_2
     # pi_A = scipy.special.expit(X_2 - X)
     # A = 1*(pi_A > np.random.uniform(size=dataset_size))
@@ -374,15 +389,15 @@ if __name__ == '__main__':
     gt_propensity_weighting_R =  scipy.special.expit(X_raw[:, 0] - X_raw[:, 1])
     population_propensity_weighting_A = scipy.special.expit(X[:,1] - X[:,0])
     observed_weights = propensity_score_matching(weights_0, weights_1, skewed_data)
-    empirical_probs = empirical_propensity_score(X)
+    empirical_probs = empirical_propensity_score(X, A)
     # I dont have the true Data size (n)
-    ipw = compute_debias_ate_ipw(A_raw, gt_propensity_weighting_A, gt_propensity_weighting_R, y_raw, obs)
+    gt_ate = compute_debias_ate_ipw()
     biased_ipw = compute_ate_ipw(A, population_propensity_weighting_A, y)
     real_outcome = (scipy.special.expit(2 - X_raw[:,0] + X_raw[:,1])> np.random.uniform(size=DATASET_SIZE)).mean()
-    # empirical_biased_ipw = compute_ate_ipw(A, empirical_probs, y)
+    empirical_biased_ipw = compute_ate_ipw(A, empirical_probs, y)
     # NAIVE_IPW = compute_ate_ipw(A, observed_weights, y)
     prop_score_tensor = prpensity_scores_by_strata([["little", "moderate", "quite rich"],["White", "Non White"]])
-    for i in range(1):
+    for i in range(5):
         upper_bound = True
         max_bound, max_loss_values, alpha_max = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate, prop_score_tensor)
 
@@ -397,10 +412,9 @@ if __name__ == '__main__':
         print(f"min:{float(min_bound)} , gt:{gt_ate},  max:{float(max_bound)}")
         plt.plot(min_loss_values)
         plt.plot(max_loss_values)
-        plt.legend(["min", "max"])
-        plt.axhline(y=gt_ate, color='r', linestyle='-')
-        plt.axhline(y=empirical_ate, color='black', linestyle='-')
-        # plt.axhline(y=ipw, color='g', linestyle='dashed')
+        # plt.axhline(y=gt_ate, color='g', linestyle='dashed')
         # plt.axhline(y=biased_ipw, color='cyan', linestyle='dashed')
-        # plt.axhline(y=real_outcome, color='olive', linestyle='dashed')
+        # plt.axhline(y=empirical_biased_ipw, color='olive', linestyle='dashed')
+        # plt.legend(["min", "max", "Ground truth ATE", "IPW", "Empirical IPW"])
+        plt.title("Learning Curves for 10 trials.")# plt.title("Average treatment effect.")
     plt.savefig(f"losses_{timestamp}")
