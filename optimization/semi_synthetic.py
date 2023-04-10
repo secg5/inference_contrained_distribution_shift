@@ -33,49 +33,47 @@ def compute_ate_ipw(A, propensity_scores, y):
     ate = (y*ipw_1 - y*ipw_0).mean()
     return ate
 
-def empirical_propensity_score(X, A):
+def empirical_propensity_score(data, levels):
     """Computes the empirical propensity scores.
      
     Computes the empirical propensity scores for each combination of 
     feature values.
     """
-    # import pdb; pdb.set_trace()
-    unique_vals = [np.unique(X[:, i]) for i in range(X.shape[1])]
-
+    unique_vals = levels[1:]
+    A = levels[0][1]
     counts = np.zeros([len(lst) for lst in unique_vals])
     tot_counts = np.zeros([len(lst) for lst in unique_vals])
-    for index in range(X.shape[0]):
 
-        row = X[index]
-        example = [0]*len(unique_vals)
-        for i, feature in enumerate(unique_vals):
-            for j, val in enumerate(feature):
-                
-                if row[i] == val:
+    def retrieve_strata(row, strata):
+        example = [0]*len(strata)
+        for i, feature in enumerate(strata):
+            for j, val in enumerate(feature):  
+                # import pdb; pdb.set_trace()      
+                if row[val] == 1:
                     example[i] = j
 
-        if A[index] == 1:
-            counts[tuple(example)] += 1
-        tot_counts[tuple(example)] += 1
+        return tuple(example)
 
-    tot_counts[tot_counts == 0] = 0.0001
+    for index in range(data.shape[0]):
+
+        row = data.iloc[index]
+        example = retrieve_strata(row, unique_vals)
+
+        if row[A] == 1:
+            counts[example] += 1
+        tot_counts[example] += 1
+    
+    tot_counts[tot_counts == 0] = 0.00001
     probs = counts / tot_counts
 
-    probs[probs == 0] = 0.0001
-    probs[probs == 1] = 0.99
+    probs[probs == 0] = 0.00001
+    probs[probs == 1] = 1 - 0.00001
   
-    empirical_probs = np.zeros([X.shape[0]])
-    for index in range(X.shape[0]):
-        row = X[index]
-        example = [0]*len(unique_vals)
-        for i, feature in enumerate(unique_vals):
-            for j, val in enumerate(feature):
-                
-                if row[i] == val:
-                    example[i] = j
-
-        empirical_probs[index] = probs[tuple(example)]
-
+    empirical_probs = np.zeros([data.shape[0]])
+    for index in range(data.shape[0]):
+        row =  data.iloc[index]
+        example = retrieve_strata(row, unique_vals)
+        empirical_probs[index] = probs[example]
     return empirical_probs, torch.tensor(probs)
 
 def build_counts(data : pd.DataFrame, levels: List[List], target:str):
@@ -104,7 +102,7 @@ def build_counts(data : pd.DataFrame, levels: List[List], target:str):
                    position[index + 1] = index_j
         count[tuple(position)] += 1
 
-    count[count == 0] = 0.001
+    count[count == 0] = 0.00001
     return count  
 
 def build_dataset(X: np.ndarray, group: np.ndarray):
@@ -115,7 +113,7 @@ def build_dataset(X: np.ndarray, group: np.ndarray):
         strata_number = features.shape[1]
         names = [str(column) + "_" + str(j) for j in range(int(strata_number))]
         data[names] = 0 
-        data[[str(column) + "_" + str(int(j)) for j in features.columns]] = features
+        data[names] = features
         levels.append(names)
     data[["female", "male"]] = pd.get_dummies(group)
     return data, levels
@@ -159,13 +157,13 @@ def build_strata_counts_matrix(weight_features: torch.Tensor,
         features_ = weight_features[level*t.shape[0]:(level + 1)*t.shape[0]]        
         y_1_ground_truth[level] = (features_*t_).sum(dim=0)
     
-    
     return y_0_ground_truth, y_1_ground_truth
 
    
 def run_search(A_0, A_1,data_count_1, data_count_0,
                      weights_features, upper_bound, gt_ate, propensity_scores):
     """Runs the search for the optimal weights."""
+
     prop_scores_0 = 1/(1-propensity_scores)
     prop_scores_1 = 1/propensity_scores
     torch.autograd.set_detect_anomaly(True)
@@ -177,6 +175,7 @@ def run_search(A_0, A_1,data_count_1, data_count_0,
         alpha_fixed = alpha.squeeze().detach().numpy()
         A_0 = A0.numpy()
         A_1 = A1.numpy()
+
         objective = cp.sum_squares(w - alpha_fixed)
         restrictions = [A_0@ w == b0, A_1@ w == b1, weights_features@w >= 1]
         prob = cp.Problem(cp.Minimize(objective), restrictions)
@@ -217,28 +216,27 @@ if __name__ == '__main__':
     features, label, group = ACSEmployment.df_to_numpy(acs_data)
 
     X, label, group = ACSEmployment.df_to_numpy(acs_data)
-    group = (group == 1)
+    group = 1*(group == 1)
     X = X.astype(int)
     label = label.astype(int)
-    # last feature is the group WTF
+    # last feature is the group
     print(X.shape)
-    X = X[:,10:-1]
-
+    X = X[:,12:-1]
+    print(X.shape)
     dataset_size = X.shape[0]
-    obs = scipy.special.expit(X[:,1] + X[:,2] - X[:,3] + X[:, 4]) > np.random.uniform(size=dataset_size)
+    obs = scipy.special.expit(X[:,1] - X[:,2]) > np.random.uniform(size=dataset_size)
     
     # Generates the data.
     X_sample, group_sample, y = X[obs], group[obs], label[obs]
     
     data, levels = build_dataset(X, group) 
-    print(levels)
     skewed_data, levels = build_dataset(X_sample, group_sample)
     print(levels)
-    # import pdb; pdb.set_trace()
     data["Creditability"] = label
     skewed_data["Creditability"] = y
     
-
+    levels = [["female", "male"]] + levels
+    print(levels)
     counts = build_counts(data, levels, "Creditability")
 
     number_strata = 1
@@ -276,11 +274,13 @@ if __name__ == '__main__':
     # population_propensity_weighting_A = scipy.special.expit(X[:,1] - X[:,0])
 
     # Which one make sense to use in this scenario?
-    propensity_scores, prop_score_tensor = empirical_propensity_score(X_sample, group_sample)
-    real_propensity_scores, real_prop_score_tensor = empirical_propensity_score(X, group)
+    propensity_scores, prop_score_tensor = empirical_propensity_score(skewed_data, levels)
+    real_propensity_scores, real_prop_score_tensor = empirical_propensity_score(data, levels)
     # gt_ate = compute_debias_ate_ipw()
     biased_ipw = compute_ate_ipw(group_sample, propensity_scores, y)
+    print("biased_ipw", biased_ipw)
     ipw = compute_ate_ipw(group, real_propensity_scores, label)
+    print("ipw", ipw)
     gt_ate = ipw
 
     # for i in range(1):
@@ -301,6 +301,6 @@ if __name__ == '__main__':
     plt.axhline(y=gt_ate, color='g', linestyle='dashed')
     plt.axhline(y=biased_ipw, color='cyan', linestyle='dashed')
     # plt.axhline(y=empirical_biased_ipw, color='olive', linestyle='dashed')
-    plt.legend(["min", "max", "Ground truth ATE", "IPW", "Empirical IPW"])
+    plt.legend(["max", "min",  "IPW", "Empirical IPW"])
     plt.title("Average treatment effect.")# plt.title("Learning Curves for 10 trials.")
     plt.savefig(f"losses_{timestamp}")
