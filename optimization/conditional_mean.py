@@ -28,8 +28,8 @@ def compute_ate_conditional_mean(A, y):
     Returns
         ate: Average treatment effect.
     """
-    conditional_mean = (y*A).mean()
-    return conditional_mean
+    conditional_mean = (y*A).sum()
+    return conditional_mean/A.sum()
 
 
 def empirical_propensity_score(data, levels):
@@ -72,7 +72,7 @@ def empirical_propensity_score(data, levels):
         row =  data.iloc[index]
         example = retrieve_strata(row, unique_vals)
         empirical_probs[index] = probs[example]
-    return empirical_probs, torch.tensor(probs)
+    return empirical_probs, tot_counts
 
 def build_counts(data : pd.DataFrame, levels: List[List], target:str):
     """
@@ -113,7 +113,7 @@ def build_dataset(X: np.ndarray, group: np.ndarray):
         data[names] = 0 
         data[names] = features
         levels.append(names)
-    data[["female", "male"]] = pd.get_dummies(group)
+    data[["white", "non-white"]] = pd.get_dummies(group)
     return data, levels
 
 def build_strata_counts_matrix(weight_features: torch.Tensor, 
@@ -159,16 +159,15 @@ def build_strata_counts_matrix(weight_features: torch.Tensor,
 
    
 def run_search(A_0, A_1,data_count_1, data_count_0,
-                     weights_features, upper_bound, gt_ate, propensity_scores, dataset_size):
+                     weights_features, upper_bound, gt_ate, pr_r, dataset_size):
     """Runs the search for the optimal weights."""
 
-    prop_scores_0 = 1/(1-propensity_scores)
-    prop_scores_1 = 1/propensity_scores
+    pr_r_t = torch.tensor(pr_r)
     torch.autograd.set_detect_anomaly(True)
     alpha = torch.rand(weights_features.shape[1], requires_grad=True)
     optim = torch.optim.Adam([alpha], 0.01)
     loss_values = []
-    for iteration in range(10000):
+    for iteration in range(4000):
         w = cp.Variable(weights_features.shape[1])
         alpha_fixed = alpha.squeeze().detach().numpy()
         A_0 = A0.numpy()
@@ -178,18 +177,22 @@ def run_search(A_0, A_1,data_count_1, data_count_0,
         restrictions = [A_0@ w == b0, A_1@ w == b1, weights_features@w >= 1]
         prob = cp.Problem(cp.Minimize(objective), restrictions)
         prob.solve()
-        
+        # import pdb;pdb.set_trace()
         alpha.data = torch.tensor(w.value).float()
         weights_y1 = (weights_features@alpha).reshape(*data_count_1.shape)
-        weighted_counts_1 = weights_y1*data_count_1
+        weighted_counts_1 = weights_y1*data_count_1*pr_r_t
+        weights_y0 = (weights_features@alpha).reshape(*data_count_0.shape)
+        weighted_counts_0 = weights_y0*data_count_0*pr_r_t
         
-        w_counts_1 = torch.permute(weighted_counts_1, (6,1,2,3,4,5,0))[1]
-        
+        w_counts_1 = weighted_counts_1.select(-1, 1)
+        w_counts_0 = weighted_counts_0.select(-1, 1)
+        # first axis is race
         # ht_A1 = w_counts_1.sum()
         # ht_A0 = (prop_scores_0*w_counts_0).sum()
         # N is known as it can be looked up from where the b were gathered.
         # ate = ht_A1/DATASET_SIZE
-        ate = w_counts_1.sum()/dataset_size
+        size = w_counts_1.sum() + w_counts_0.sum()
+        ate = w_counts_1.sum()/size
         
         loss = -ate if upper_bound else ate
         loss_values.append(ate.detach().numpy())
@@ -207,6 +210,25 @@ def run_search(A_0, A_1,data_count_1, data_count_0,
 
     return ret, loss_values, alpha
 
+# ACSEmployment = folktables.BasicProblem(
+#     features=[
+#         'AGEP',
+#         'SCHL',
+#         'MAR',
+#         'RELP',
+#         'DIS',
+#         'ESP',
+#         'CIT',
+#         'MIG',
+#         'MIL',
+#         'ANC',
+#         'NATIVITY',
+#         'DEAR',
+#         'DEYE',
+#         'DREM',
+#         'SEX',
+#         'RAC1P',
+#     ],
 if __name__ == '__main__':
 
     data_source = ACSDataSource(survey_year='2018', 
@@ -222,44 +244,44 @@ if __name__ == '__main__':
     # last feature is the group
     print(X.shape)
     # X = X[:,12:-1]
-    X = X[:,-6: -1]
+    X = X[:,-8: -1]
     print(X.shape)
-    race = X[:, -2]
+    sex = X[:, -2]
    
     dataset_size = X.shape[0]
-    obs = scipy.special.expit(X[:,0] - X[:,1]) > np.random.uniform(size=dataset_size)
+    obs = scipy.special.expit(X[:,0] - X[:,1] + X[:,2]) > np.random.uniform(size=dataset_size)
     
     # Generates the data.
     X_sample, group_sample, y = X[obs], group[obs], label[obs]
-    race_group = race[obs]
+    sex_group = sex[obs]
     data, levels = build_dataset(X, group) 
     skewed_data, levels = build_dataset(X_sample, group_sample)
     print(levels)
     data["Creditability"] = label
     skewed_data["Creditability"] = y
     
-    levels = [["female", "male"]] + levels
+    levels = [["white", "non-white"]] + levels
     print(levels)
     counts = build_counts(data, levels, "Creditability")
 
     number_strata = 1
     for level in levels:
         number_strata *= len(level)
-
+    print(number_strata)
     weights_features = torch.eye(number_strata)
 
     # # Creates groundtruth values to generate linear restrictions.
-    y00_female = sum((data["Creditability"] == 0) & (data["female"] == 1))
-    y01_female = sum((data["Creditability"] == 1) & (data["female"] == 1))
+    y00_female = sum((data["Creditability"] == 0) & (data["white"] == 1))
+    y01_female = sum((data["Creditability"] == 1) & (data["white"] == 1))
 
-    y00_male = sum((data["Creditability"] == 0) & (data["male"] == 1))
-    y01_male = sum((data["Creditability"] == 1) & (data["male"] == 1))
+    y00_male = sum((data["Creditability"] == 0) & (data["non-white"] == 1))
+    y01_male = sum((data["Creditability"] == 1) & (data["non-white"] == 1))
 
-    bias_y00_female = sum((skewed_data["Creditability"] == 0) & (skewed_data["female"] == 1))
-    bias_y01_female = sum((skewed_data["Creditability"] == 1) & (skewed_data["female"] == 1))
+    bias_y00_female = sum((skewed_data["Creditability"] == 0) & (skewed_data["white"] == 1))
+    bias_y01_female = sum((skewed_data["Creditability"] == 1) & (skewed_data["non-white"] == 1))
 
-    bias_y00_male = sum((skewed_data["Creditability"] == 0) & (skewed_data["male"] == 1))
-    bias_y01_male = sum((skewed_data["Creditability"] == 1) & (skewed_data["male"] == 1))
+    bias_y00_male = sum((skewed_data["Creditability"] == 0) & (skewed_data["white"] == 1))
+    bias_y01_male = sum((skewed_data["Creditability"] == 1) & (skewed_data["non-white"] == 1))
 
     b0 = np.array([y00_female, y00_male])
     b1 = np.array([y01_female, y01_male])
@@ -268,7 +290,7 @@ if __name__ == '__main__':
 
     data_count_0 = counts[0]
     data_count_1 = counts[1]
-    A0, A1 = build_strata_counts_matrix(weights_features, counts, ["female", "male"])
+    A0, A1 = build_strata_counts_matrix(weights_features, counts, ["white", "non-white"])
     
 
     # TODO (Santiago): Encapsulate benchmark generation process.
@@ -276,21 +298,23 @@ if __name__ == '__main__':
     # gt_propensity_weighting_R =  scipy.special.expit(X_raw[:, 0] - X_raw[:, 1])
     # population_propensity_weighting_A = scipy.special.expit(X[:,1] - X[:,0])
     # Which one make sense to use in this scenario?
-    propensity_scores, prop_score_tensor = empirical_propensity_score(skewed_data, levels)
-    real_propensity_scores, real_prop_score_tensor = empirical_propensity_score(data, levels)
+
+    propensity_scores, counts_tensor = empirical_propensity_score(skewed_data, levels)
+    real_propensity_scores, real_counts_tensor = empirical_propensity_score(data, levels)
     # gt_ate = compute_debias_ate_ipw()
-    biased_ipw = compute_ate_conditional_mean(race_group, y)
+    pr_1 = counts_tensor/real_counts_tensor
+    biased_ipw = compute_ate_conditional_mean(sex_group, y)
     print("biased conditional mean", biased_ipw)
-    ipw = compute_ate_conditional_mean(race, label)
+    ipw = compute_ate_conditional_mean(sex, label)
     print("conditional mean", ipw)
     gt_ate = ipw
 
     # for i in range(1):
     upper_bound = True
-    max_bound, max_loss_values, alpha_max = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate, prop_score_tensor, dataset_size)
+    max_bound, max_loss_values, alpha_max = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate, pr_1, dataset_size)
 
     upper_bound = False
-    min_bound, min_loss_values, alpha_min = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate, prop_score_tensor, dataset_size)
+    min_bound, min_loss_values, alpha_min = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate, pr_1, dataset_size)
 
     c_time = datetime.datetime.now()
     timestamp = str(c_time.timestamp())
@@ -301,8 +325,9 @@ if __name__ == '__main__':
     plt.plot(min_loss_values)
     plt.plot(max_loss_values)
     plt.axhline(y=gt_ate, color='g', linestyle='dashed')
-    # plt.axhline(y=biased_ipw, color='cyan', linestyle='dashed')
+    plt.axhline(y=biased_ipw, color='cyan', linestyle='dashed')
     # plt.axhline(y=empirical_biased_ipw, color='olive', linestyle='dashed')
-    plt.legend(["max", "min",  "IPW", "Empirical IPW"])
+    # plt.legend(["min", "max",  "IPW", "Empirical IPW"])
+    # plt.legend(["min", "max"])
     plt.title("Average treatment effect.")# plt.title("Learning Curves for 10 trials.")
     plt.savefig(f"losses_{timestamp}")

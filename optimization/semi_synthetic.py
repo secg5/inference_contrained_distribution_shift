@@ -15,7 +15,7 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from folktables import ACSDataSource, ACSEmployment
 
-DATASET_SIZE = 10000
+DATASET_SIZE = 47777
 
 def compute_ate_ipw(A, propensity_scores, y):
     """Computes the ate using inverse propensity weighting.
@@ -48,7 +48,6 @@ def empirical_propensity_score(data, levels):
         example = [0]*len(strata)
         for i, feature in enumerate(strata):
             for j, val in enumerate(feature):  
-                # import pdb; pdb.set_trace()      
                 if row[val] == 1:
                     example[i] = j
 
@@ -170,7 +169,7 @@ def run_search(A_0, A_1,data_count_1, data_count_0,
     alpha = torch.rand(weights_features.shape[1], requires_grad=True)
     optim = torch.optim.Adam([alpha], 0.01)
     loss_values = []
-    for iteration in range(10000):
+    for iteration in range(2000):
         w = cp.Variable(weights_features.shape[1])
         alpha_fixed = alpha.squeeze().detach().numpy()
         A_0 = A0.numpy()
@@ -224,7 +223,8 @@ if __name__ == '__main__':
     X = X[:,12:-1]
     print(X.shape)
     dataset_size = X.shape[0]
-    obs = scipy.special.expit(X[:,1] - X[:,2]) > np.random.uniform(size=dataset_size)
+    # import pdb; pdb.set_trace()
+    obs = scipy.special.expit(X[:,0] - X[:,1] + X[:,2]) > np.random.uniform(size=dataset_size)
     
     # Generates the data.
     X_sample, group_sample, y = X[obs], group[obs], label[obs]
@@ -272,7 +272,6 @@ if __name__ == '__main__':
     # gt_propensity_weighting_A = scipy.special.expit(X_raw[:,1] - X_raw[:,0]) 
     # gt_propensity_weighting_R =  scipy.special.expit(X_raw[:, 0] - X_raw[:, 1])
     # population_propensity_weighting_A = scipy.special.expit(X[:,1] - X[:,0])
-
     # Which one make sense to use in this scenario?
     propensity_scores, prop_score_tensor = empirical_propensity_score(skewed_data, levels)
     real_propensity_scores, real_prop_score_tensor = empirical_propensity_score(data, levels)
@@ -301,6 +300,6 @@ if __name__ == '__main__':
     plt.axhline(y=gt_ate, color='g', linestyle='dashed')
     plt.axhline(y=biased_ipw, color='cyan', linestyle='dashed')
     # plt.axhline(y=empirical_biased_ipw, color='olive', linestyle='dashed')
-    plt.legend(["max", "min",  "IPW", "Empirical IPW"])
+    plt.legend(["min", "max",  "IPW", "Empirical IPW"])
     plt.title("Average treatment effect.")# plt.title("Learning Curves for 10 trials.")
     plt.savefig(f"losses_{timestamp}")
