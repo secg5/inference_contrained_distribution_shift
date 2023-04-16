@@ -15,7 +15,6 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from folktables import ACSDataSource, ACSEmployment
 
-DATASET_SIZE = 47777
 
 def compute_ate_conditional_mean(A, y):
     """Computes the ate using inverse propensity weighting.
@@ -177,7 +176,7 @@ def run_search(A_0, A_1,data_count_1, data_count_0,
 
         objective = cp.sum_squares(w - alpha_fixed)
         # restrictions = [A_0@ w == b0, A_1@ w == b1, weights_features@w >= 1]
-
+        # P(r|A=1) is bounded below by n/N
         restrictions = [A_0@ w == b0, A_1@ w == b1, weights_features@w >= n_sample/dataset_size]
         prob = cp.Problem(cp.Minimize(objective), restrictions)
         prob.solve()
@@ -334,6 +333,5 @@ if __name__ == '__main__':
     plt.axhline(y=biased_ipw, color='cyan', linestyle='dashed')
     # plt.axhline(y=empirical_biased_ipw, color='olive', linestyle='dashed')
     plt.legend(["min", "max",  "IPW", "Empirical IPW"])
-    plt.legend(["min", "max"])
     plt.title("Average treatment effect.")# plt.title("Learning Curves for 10 trials.")
     plt.savefig(f"losses_{timestamp}")
