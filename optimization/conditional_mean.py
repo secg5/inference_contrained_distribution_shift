@@ -167,23 +167,29 @@ def run_search(A_0, A_1,data_count_1, data_count_0,
     alpha = torch.rand(weights_features.shape[1], requires_grad=True)
     optim = torch.optim.Adam([alpha], 0.01)
     loss_values = []
-    for iteration in range(4000):
+    n_sample = data_count_1.sum() + data_count_0.sum()
+    print(n_sample/dataset_size)
+    for iteration in range(3000):
         w = cp.Variable(weights_features.shape[1])
         alpha_fixed = alpha.squeeze().detach().numpy()
         A_0 = A0.numpy()
         A_1 = A1.numpy()
 
         objective = cp.sum_squares(w - alpha_fixed)
-        restrictions = [A_0@ w == b0, A_1@ w == b1, weights_features@w >= 1]
+        # restrictions = [A_0@ w == b0, A_1@ w == b1, weights_features@w >= 1]
+
+        restrictions = [A_0@ w == b0, A_1@ w == b1, weights_features@w >= n_sample/dataset_size]
         prob = cp.Problem(cp.Minimize(objective), restrictions)
         prob.solve()
         # import pdb;pdb.set_trace()
         alpha.data = torch.tensor(w.value).float()
         weights_y1 = (weights_features@alpha).reshape(*data_count_1.shape)
-        weighted_counts_1 = weights_y1*data_count_1*pr_r_t
+        # weighted_counts_1 = weights_y1*data_count_1*pr_r_t
+        weighted_counts_1 = weights_y1*data_count_1
         weights_y0 = (weights_features@alpha).reshape(*data_count_0.shape)
-        weighted_counts_0 = weights_y0*data_count_0*pr_r_t
-        
+        # weighted_counts_0 = weights_y0*data_count_0*pr_r_t
+        weighted_counts_0 = weights_y0*data_count_0
+
         w_counts_1 = weighted_counts_1.select(-1, 1)
         w_counts_0 = weighted_counts_0.select(-1, 1)
         # first axis is race
@@ -262,7 +268,7 @@ if __name__ == '__main__':
     
     levels = [["white", "non-white"]] + levels
     print(levels)
-    counts = build_counts(data, levels, "Creditability")
+    counts = build_counts(skewed_data, levels, "Creditability")
 
     number_strata = 1
     for level in levels:
@@ -327,7 +333,7 @@ if __name__ == '__main__':
     plt.axhline(y=gt_ate, color='g', linestyle='dashed')
     plt.axhline(y=biased_ipw, color='cyan', linestyle='dashed')
     # plt.axhline(y=empirical_biased_ipw, color='olive', linestyle='dashed')
-    # plt.legend(["min", "max",  "IPW", "Empirical IPW"])
-    # plt.legend(["min", "max"])
+    plt.legend(["min", "max",  "IPW", "Empirical IPW"])
+    plt.legend(["min", "max"])
     plt.title("Average treatment effect.")# plt.title("Learning Curves for 10 trials.")
     plt.savefig(f"losses_{timestamp}")
