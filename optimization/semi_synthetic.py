@@ -114,7 +114,7 @@ def build_dataset(X: np.ndarray, group: np.ndarray):
         data[names] = 0 
         data[names] = features
         levels.append(names)
-    data[["female", "male"]] = pd.get_dummies(group)
+    data[["non-black", "black"]] = pd.get_dummies(group)
     return data, levels
 
 def build_strata_counts_matrix(weight_features: torch.Tensor, 
@@ -160,7 +160,7 @@ def build_strata_counts_matrix(weight_features: torch.Tensor,
 
    
 def run_search(A_0, A_1,data_count_1, data_count_0,
-                     weights_features, upper_bound, gt_ate, propensity_scores):
+                     weights_features, upper_bound, gt_ate, propensity_scores, dataset_size):
     """Runs the search for the optimal weights."""
 
     prop_scores_0 = 1/(1-propensity_scores)
@@ -170,14 +170,14 @@ def run_search(A_0, A_1,data_count_1, data_count_0,
     optim = torch.optim.Adam([alpha], 0.01)
     loss_values = []
     n_sample = data_count_1.sum() + data_count_0.sum()
-    for iteration in range(2000):
+    for iteration in range(5000):
         w = cp.Variable(weights_features.shape[1])
         alpha_fixed = alpha.squeeze().detach().numpy()
         A_0 = A0.numpy()
         A_1 = A1.numpy()
 
         objective = cp.sum_squares(w - alpha_fixed)
-        restrictions = [A_0@ w == b0, A_1@ w == b1, weights_features@w >= (n_sample/DATASET_SIZE)]
+        restrictions = [A_0@ w == b0, A_1@ w == b1, weights_features@w >= (n_sample/dataset_size)]
         prob = cp.Problem(cp.Minimize(objective), restrictions)
         prob.solve()
         
@@ -216,14 +216,15 @@ if __name__ == '__main__':
     features, label, group = ACSEmployment.df_to_numpy(acs_data)
 
     X, label, group = ACSEmployment.df_to_numpy(acs_data)
-    group = 1*(group == 1)
+    #being black is A= 1
+    group = 1*(group == 2)
 
     X = X.astype(int)
     label = label.astype(int)
     # last feature is the group
     print(X.shape)
     # X = X[:,12:-1]
-    X = X[:,-8: -1]
+    X = X[:,-7: -1]
     print(X.shape)
     sex = X[:, -2]
    
@@ -239,7 +240,7 @@ if __name__ == '__main__':
     data["Creditability"] = label
     skewed_data["Creditability"] = y
     
-    levels = [["female", "male"]] + levels
+    levels = [["non-black", "black"]] + levels
     print(levels)
     counts = build_counts(skewed_data, levels, "Creditability")
 
@@ -250,17 +251,17 @@ if __name__ == '__main__':
     weights_features = torch.eye(number_strata)
 
     # # Creates groundtruth values to generate linear restrictions.
-    y00_female = sum((data["Creditability"] == 0) & (data["female"] == 1))
-    y01_female = sum((data["Creditability"] == 1) & (data["female"] == 1))
+    y00_female = sum((data["Creditability"] == 0) & (data["non-black"] == 1))
+    y01_female = sum((data["Creditability"] == 1) & (data["non-black"] == 1))
 
-    y00_male = sum((data["Creditability"] == 0) & (data["male"] == 1))
-    y01_male = sum((data["Creditability"] == 1) & (data["male"] == 1))
+    y00_male = sum((data["Creditability"] == 0) & (data["black"] == 1))
+    y01_male = sum((data["Creditability"] == 1) & (data["black"] == 1))
 
-    bias_y00_female = sum((skewed_data["Creditability"] == 0) & (skewed_data["female"] == 1))
-    bias_y01_female = sum((skewed_data["Creditability"] == 1) & (skewed_data["female"] == 1))
+    bias_y00_female = sum((skewed_data["Creditability"] == 0) & (skewed_data["non-black"] == 1))
+    bias_y01_female = sum((skewed_data["Creditability"] == 1) & (skewed_data["non-black"] == 1))
 
-    bias_y00_male = sum((skewed_data["Creditability"] == 0) & (skewed_data["male"] == 1))
-    bias_y01_male = sum((skewed_data["Creditability"] == 1) & (skewed_data["male"] == 1))
+    bias_y00_male = sum((skewed_data["Creditability"] == 0) & (skewed_data["black"] == 1))
+    bias_y01_male = sum((skewed_data["Creditability"] == 1) & (skewed_data["black"] == 1))
 
     b0 = np.array([y00_female, y00_male])
     b1 = np.array([y01_female, y01_male])
@@ -269,7 +270,7 @@ if __name__ == '__main__':
 
     data_count_0 = counts[0]
     data_count_1 = counts[1]
-    A0, A1 = build_strata_counts_matrix(weights_features, counts, ["female", "male"])
+    A0, A1 = build_strata_counts_matrix(weights_features, counts, ["non-black", "black"])
     
 
     # TODO (Santiago): Encapsulate benchmark generation process.
@@ -288,10 +289,10 @@ if __name__ == '__main__':
 
     # for i in range(1):
     upper_bound = True
-    max_bound, max_loss_values, alpha_max = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate, prop_score_tensor)
+    max_bound, max_loss_values, alpha_max = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate, prop_score_tensor, dataset_size)
 
     upper_bound = False
-    min_bound, min_loss_values, alpha_min = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate, prop_score_tensor)
+    min_bound, min_loss_values, alpha_min = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate, prop_score_tensor, dataset_size)
 
     c_time = datetime.datetime.now()
     timestamp = str(c_time.timestamp())
