@@ -169,6 +169,7 @@ def run_search(A_0, A_1,data_count_1, data_count_0,
     alpha = torch.rand(weights_features.shape[1], requires_grad=True)
     optim = torch.optim.Adam([alpha], 0.01)
     loss_values = []
+    n_sample = data_count_1.sum() + data_count_0.sum()
     for iteration in range(2000):
         w = cp.Variable(weights_features.shape[1])
         alpha_fixed = alpha.squeeze().detach().numpy()
@@ -176,7 +177,7 @@ def run_search(A_0, A_1,data_count_1, data_count_0,
         A_1 = A1.numpy()
 
         objective = cp.sum_squares(w - alpha_fixed)
-        restrictions = [A_0@ w == b0, A_1@ w == b1, weights_features@w >= 1]
+        restrictions = [A_0@ w == b0, A_1@ w == b1, weights_features@w >= (n_sample/DATASET_SIZE)]
         prob = cp.Problem(cp.Minimize(objective), restrictions)
         prob.solve()
         
@@ -190,7 +191,7 @@ def run_search(A_0, A_1,data_count_1, data_count_0,
         ht_A1 = (prop_scores_1*w_counts_1).sum()
         ht_A0 = (prop_scores_0*w_counts_0).sum()
         # N is known as it can be looked up from where the b were gathered.
-        ate = (ht_A1 - ht_A0)/DATASET_SIZE
+        ate = (ht_A1 - ht_A0)/n_sample
         
         loss = -ate if upper_bound else ate
         loss_values.append(ate.detach().numpy())
@@ -216,14 +217,17 @@ if __name__ == '__main__':
 
     X, label, group = ACSEmployment.df_to_numpy(acs_data)
     group = 1*(group == 1)
+
     X = X.astype(int)
     label = label.astype(int)
     # last feature is the group
     print(X.shape)
-    X = X[:,12:-1]
+    # X = X[:,12:-1]
+    X = X[:,-8: -1]
     print(X.shape)
+    sex = X[:, -2]
+   
     dataset_size = X.shape[0]
-    # import pdb; pdb.set_trace()
     obs = scipy.special.expit(X[:,0] - X[:,1] + X[:,2]) > np.random.uniform(size=dataset_size)
     
     # Generates the data.
@@ -237,7 +241,7 @@ if __name__ == '__main__':
     
     levels = [["female", "male"]] + levels
     print(levels)
-    counts = build_counts(data, levels, "Creditability")
+    counts = build_counts(skewed_data, levels, "Creditability")
 
     number_strata = 1
     for level in levels:
