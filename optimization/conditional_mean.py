@@ -31,6 +31,23 @@ def compute_ate_conditional_mean(A, y):
     return conditional_mean/A.sum()
 
 
+def compute_ate_ipw(A, propensity_scores, y):
+    """Computes the ate using inverse propensity weighting.
+
+    Args:
+        A (_type_): vector of observed outcomes
+        propensity_scores (_type_): Vector of propensity scores
+        y (_type_): response variable
+    
+    Returns
+        ate: Average treatment effect.
+    """
+    ipw_1 = A*(1/propensity_scores)
+    ipw_0 = (1 - A)*(1/(1-propensity_scores))
+    ate = (y*ipw_1 - y*ipw_0).mean()
+    return ate
+
+
 def empirical_propensity_score(data, levels):
     """Computes the empirical propensity scores.
      
@@ -168,7 +185,7 @@ def run_search(A_0, A_1,data_count_1, data_count_0,
     loss_values = []
     n_sample = data_count_1.sum() + data_count_0.sum()
     print(n_sample/dataset_size)
-    for iteration in range(3000):
+    for iteration in range(2000):
         w = cp.Variable(weights_features.shape[1])
         alpha_fixed = alpha.squeeze().detach().numpy()
         A_0 = A0.numpy()
@@ -308,30 +325,35 @@ if __name__ == '__main__':
     real_propensity_scores, real_counts_tensor = empirical_propensity_score(data, levels)
     # gt_ate = compute_debias_ate_ipw()
     pr_1 = counts_tensor/real_counts_tensor
-    biased_ipw = compute_ate_conditional_mean(sex_group, y)
-    print("biased conditional mean", biased_ipw)
-    ipw = compute_ate_conditional_mean(sex, label)
-    print("conditional mean", ipw)
+    biased_empirical_mean = compute_ate_conditional_mean(sex_group, y)
+    
+    empirical_mean = compute_ate_conditional_mean(sex, label)
+    ipw  = compute_ate_ipw(sex_group, propensity_scores, y)
+
+    np.save("baselines", np.array([biased_empirical_mean, empirical_mean, ipw]))
+    print("baselines:", [biased_empirical_mean, empirical_mean, ipw])
     gt_ate = ipw
 
-    # for i in range(1):
-    upper_bound = True
-    max_bound, max_loss_values, alpha_max = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate, pr_1, dataset_size)
+    for index in range(1):
+        upper_bound = True
+        max_bound, max_loss_values, alpha_max = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate, pr_1, dataset_size)
 
-    upper_bound = False
-    min_bound, min_loss_values, alpha_min = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate, pr_1, dataset_size)
+        upper_bound = False
+        min_bound, min_loss_values, alpha_min = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate, pr_1, dataset_size)
 
-    c_time = datetime.datetime.now()
-    timestamp = str(c_time.timestamp())
-    timestamp = "_".join(timestamp.split("."))
+        c_time = datetime.datetime.now()
+        timestamp = str(c_time.timestamp())
+        timestamp = "_".join(timestamp.split("."))
+        np.save(f"min_loss_{index}", min_loss_values)
+        np.save(f"max_loss_{index}", max_loss_values)
 
+        print(f"min:{float(min_bound)} , gt:{gt_ate},  max:{float(max_bound)}")
+        plt.plot(min_loss_values)
+        plt.plot(max_loss_values)
+        # plt.axhline(y=gt_ate, color='g', linestyle='dashed')
+        plt.axhline(y=empirical_mean, color='cyan', linestyle='dashed')
+        plt.axhline(y=biased_empirical_mean, color='olive', linestyle='dashed')
+        plt.legend(["min", "max",  "IPW", "Empirical IPW"])
+        plt.title("Average treatment effect.")# plt.title("Learning Curves for 10 trials.")
+        plt.savefig(f"losses_{timestamp}")
 
-    print(f"min:{float(min_bound)} , gt:{gt_ate},  max:{float(max_bound)}")
-    plt.plot(min_loss_values)
-    plt.plot(max_loss_values)
-    plt.axhline(y=gt_ate, color='g', linestyle='dashed')
-    plt.axhline(y=biased_ipw, color='cyan', linestyle='dashed')
-    # plt.axhline(y=empirical_biased_ipw, color='olive', linestyle='dashed')
-    plt.legend(["min", "max",  "IPW", "Empirical IPW"])
-    plt.title("Average treatment effect.")# plt.title("Learning Curves for 10 trials.")
-    plt.savefig(f"losses_{timestamp}")
