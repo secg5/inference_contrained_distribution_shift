@@ -13,23 +13,9 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
-from folktables import ACSDataSource, ACSEmployment
+from folktables import ACSDataSource, ACSIncome
 
-
-def compute_ate_conditional_mean(A, y):
-    """Computes the ate using inverse propensity weighting.
-
-    Args:
-        A (_type_): vector of observed outcomes
-        propensity_scores (_type_): Vector of propensity scores
-        y (_type_): response variable
-    
-    Returns
-        ate: Average treatment effect.
-    """
-    conditional_mean = (y*A).sum()
-    return conditional_mean/A.sum()
-
+DATASET_SIZE = 47777
 
 def compute_ate_ipw(A, propensity_scores, y):
     """Computes the ate using inverse propensity weighting.
@@ -46,7 +32,6 @@ def compute_ate_ipw(A, propensity_scores, y):
     ipw_0 = (1 - A)*(1/(1-propensity_scores))
     ate = (y*ipw_1 - y*ipw_0).mean()
     return ate
-
 
 def empirical_propensity_score(data, levels):
     """Computes the empirical propensity scores.
@@ -88,7 +73,7 @@ def empirical_propensity_score(data, levels):
         row =  data.iloc[index]
         example = retrieve_strata(row, unique_vals)
         empirical_probs[index] = probs[example]
-    return empirical_probs, tot_counts
+    return empirical_probs, torch.tensor(probs)
 
 def build_counts(data : pd.DataFrame, levels: List[List], target:str):
     """
@@ -129,7 +114,7 @@ def build_dataset(X: np.ndarray, group: np.ndarray):
         data[names] = 0 
         data[names] = features
         levels.append(names)
-    data[["white", "non-white"]] = pd.get_dummies(group)
+    data[["non-black", "black"]] = pd.get_dummies(group)
     return data, levels
 
 def build_strata_counts_matrix(weight_features: torch.Tensor, 
@@ -175,40 +160,38 @@ def build_strata_counts_matrix(weight_features: torch.Tensor,
 
    
 def run_search(A_0, A_1,data_count_1, data_count_0,
-                     weights_features, upper_bound, gt_ate, pr_r, dataset_size):
+                     weights_features, upper_bound, gt_ate, propensity_scores, dataset_size):
     """Runs the search for the optimal weights."""
 
-    pr_r_t = torch.tensor(pr_r)
+    prop_scores_0 = 1/(1-propensity_scores)
+    prop_scores_1 = 1/propensity_scores
     torch.autograd.set_detect_anomaly(True)
     alpha = torch.rand(weights_features.shape[1], requires_grad=True)
     optim = torch.optim.Adam([alpha], 0.01)
     loss_values = []
     n_sample = data_count_1.sum() + data_count_0.sum()
-    print(n_sample/dataset_size)
-    for iteration in range(2000):
+    for iteration in range(5000):
         w = cp.Variable(weights_features.shape[1])
         alpha_fixed = alpha.squeeze().detach().numpy()
         A_0 = A0.numpy()
         A_1 = A1.numpy()
 
         objective = cp.sum_squares(w - alpha_fixed)
-        restrictions = [A_0@ w == b0, A_1@ w == b1, weights_features@w >= n_sample/dataset_size]
+        restrictions = [A_0@ w == b0, A_1@ w == b1, weights_features@w >= (n_sample/dataset_size)]
         prob = cp.Problem(cp.Minimize(objective), restrictions)
         prob.solve()
-
+        
         alpha.data = torch.tensor(w.value).float()
         weights_y1 = (weights_features@alpha).reshape(*data_count_1.shape)
-
         weighted_counts_1 = weights_y1*data_count_1
-        weights_y0 = (weights_features@alpha).reshape(*data_count_0.shape)
-
-        weighted_counts_0 = weights_y0*data_count_0
-
-        w_counts_1 = weighted_counts_1.select(-1, 1)
-        w_counts_0 = weighted_counts_0.select(-1, 1)
-
-        size = w_counts_1.sum() + w_counts_0.sum()
-        ate = w_counts_1.sum()/size
+        
+        w_counts_1 = weighted_counts_1[1] 
+        w_counts_0 =  weighted_counts_1[0]
+       
+        ht_A1 = (prop_scores_1*w_counts_1).sum()
+        ht_A0 = (prop_scores_0*w_counts_0).sum()
+        # N is known as it can be looked up from where the b were gathered.
+        ate = (ht_A1 - ht_A0)/n_sample
         
         loss = -ate if upper_bound else ate
         loss_values.append(ate.detach().numpy())
@@ -223,80 +206,91 @@ def run_search(A_0, A_1,data_count_1, data_count_0,
         ret = max(loss_values)
     else:
         ret = min(loss_values)
-
     return ret, loss_values, alpha
 
-# ACSEmployment = folktables.BasicProblem(
-#     features=[
+
+def map_to_bucket(value):
+    buckets = [(0, 30), (30, 50), (50, 65), (65, 100)]
+    for i, (lower, upper) in enumerate(buckets):
+        if lower <= value < upper:
+            return i + 1
+    return 0
+
+# [
 #         'AGEP',
-#         'SCHL',
+#         'COW',
+#         'SCHL', Education levels (use this one)
 #         'MAR',
+#         'OCCP',
+#         'POBP', place of birth
 #         'RELP',
-#         'DIS',
-#         'ESP',
-#         'CIT',
-#         'MIG',
-#         'MIL',
-#         'ANC',
-#         'NATIVITY',
-#         'DEAR',
-#         'DEYE',
-#         'DREM',
+#         'WKHP', Work hours per week
 #         'SEX',
 #         'RAC1P',
-#     ],
+#     ]
+
 if __name__ == '__main__':
 
     data_source = ACSDataSource(survey_year='2018', 
                                 horizon='1-Year', survey='person')
-    acs_data = data_source.get_data(states=["AL"], download=True)
-    features, label, group = ACSEmployment.df_to_numpy(acs_data)
+    # Try a different state.
+    acs_data = data_source.get_data(states=["PA"], download=True)
+    features, label, group = ACSIncome.df_to_numpy(acs_data)
 
-    X, label, group = ACSEmployment.df_to_numpy(acs_data)
-    group = 1*(group == 1)
-
+    X, label, group = ACSIncome.df_to_numpy(acs_data)
+    # import pdb; pdb.set_trace()
+    #being black is A= 1
+    group = 1*(group == 2)
+    import pdb; pdb.set_trace()
     X = X.astype(int)
     label = label.astype(int)
+    sex = X[:, -2]
     # last feature is the group
     print(X.shape)
     # X = X[:,12:-1]
-    X = X[:,-8: -1]
-    print(X.shape)
-    sex = X[:, -2]
+    X =  np.delete(X, [4, 5,6, 9], 1)
+    mapped_column =  np.vectorize(map_to_bucket)(X[:, 0])
+    X[:, 0] = mapped_column
+    mapped_column =  np.vectorize(map_to_bucket)(X[:, -2])
+    X[:, -2] = mapped_column
+
+    print(X[0])
+    
    
     dataset_size = X.shape[0]
     obs = scipy.special.expit(X[:,0] - X[:,1] + X[:,2]) > np.random.uniform(size=dataset_size)
     
     # Generates the data.
     X_sample, group_sample, y = X[obs], group[obs], label[obs]
-    sex_group = sex[obs]
+    
     data, levels = build_dataset(X, group) 
     skewed_data, levels = build_dataset(X_sample, group_sample)
     print(levels)
     data["Creditability"] = label
     skewed_data["Creditability"] = y
     
-    levels = [["white", "non-white"]] + levels
+    levels = [["non-black", "black"]] + levels
     print(levels)
     counts = build_counts(skewed_data, levels, "Creditability")
 
     number_strata = 1
     for level in levels:
         number_strata *= len(level)
-    print(number_strata)
+
     weights_features = torch.eye(number_strata)
+
     # # Creates groundtruth values to generate linear restrictions.
-    y00_female = sum((data["Creditability"] == 0) & (data["white"] == 1))
-    y01_female = sum((data["Creditability"] == 1) & (data["white"] == 1))
+    y00_female = sum((data["Creditability"] == 0) & (data["non-black"] == 1))
+    y01_female = sum((data["Creditability"] == 1) & (data["non-black"] == 1))
 
-    y00_male = sum((data["Creditability"] == 0) & (data["non-white"] == 1))
-    y01_male = sum((data["Creditability"] == 1) & (data["non-white"] == 1))
+    y00_male = sum((data["Creditability"] == 0) & (data["black"] == 1))
+    y01_male = sum((data["Creditability"] == 1) & (data["black"] == 1))
 
-    bias_y00_female = sum((skewed_data["Creditability"] == 0) & (skewed_data["white"] == 1))
-    bias_y01_female = sum((skewed_data["Creditability"] == 1) & (skewed_data["non-white"] == 1))
+    bias_y00_female = sum((skewed_data["Creditability"] == 0) & (skewed_data["non-black"] == 1))
+    bias_y01_female = sum((skewed_data["Creditability"] == 1) & (skewed_data["non-black"] == 1))
 
-    bias_y00_male = sum((skewed_data["Creditability"] == 0) & (skewed_data["white"] == 1))
-    bias_y01_male = sum((skewed_data["Creditability"] == 1) & (skewed_data["non-white"] == 1))
+    bias_y00_male = sum((skewed_data["Creditability"] == 0) & (skewed_data["black"] == 1))
+    bias_y01_male = sum((skewed_data["Creditability"] == 1) & (skewed_data["black"] == 1))
 
     b0 = np.array([y00_female, y00_male])
     b1 = np.array([y01_female, y01_male])
@@ -305,7 +299,7 @@ if __name__ == '__main__':
 
     data_count_0 = counts[0]
     data_count_1 = counts[1]
-    A0, A1 = build_strata_counts_matrix(weights_features, counts, ["white", "non-white"])
+    A0, A1 = build_strata_counts_matrix(weights_features, counts, ["non-black", "black"])
     
 
     # TODO (Santiago): Encapsulate benchmark generation process.
@@ -313,40 +307,33 @@ if __name__ == '__main__':
     # gt_propensity_weighting_R =  scipy.special.expit(X_raw[:, 0] - X_raw[:, 1])
     # population_propensity_weighting_A = scipy.special.expit(X[:,1] - X[:,0])
     # Which one make sense to use in this scenario?
-
-    propensity_scores, counts_tensor = empirical_propensity_score(skewed_data, levels)
-    real_propensity_scores, real_counts_tensor = empirical_propensity_score(data, levels)
+    propensity_scores, prop_score_tensor = empirical_propensity_score(skewed_data, levels)
+    real_propensity_scores, real_prop_score_tensor = empirical_propensity_score(data, levels)
     # gt_ate = compute_debias_ate_ipw()
-    pr_1 = counts_tensor/real_counts_tensor
-    biased_empirical_mean = compute_ate_conditional_mean(sex_group, y)
-    
-    empirical_mean = compute_ate_conditional_mean(sex, label)
-    ipw  = compute_ate_ipw(sex_group, propensity_scores, y)
-
-    np.save("baselines", np.array([biased_empirical_mean, empirical_mean, ipw]))
-    print("baselines:", [biased_empirical_mean, empirical_mean, ipw])
+    biased_ipw = compute_ate_ipw(group_sample, propensity_scores, y)
+    print("biased_ipw", biased_ipw)
+    ipw = compute_ate_ipw(group, real_propensity_scores, label)
+    print("ipw", ipw)
     gt_ate = ipw
 
-    for index in range(1):
-        upper_bound = True
-        max_bound, max_loss_values, alpha_max = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate, pr_1, dataset_size)
+    # # for i in range(1):
+    # upper_bound = True
+    # max_bound, max_loss_values, alpha_max = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate, prop_score_tensor, dataset_size)
 
-        upper_bound = False
-        min_bound, min_loss_values, alpha_min = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate, pr_1, dataset_size)
+    # upper_bound = False
+    # min_bound, min_loss_values, alpha_min = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate, prop_score_tensor, dataset_size)
 
-        c_time = datetime.datetime.now()
-        timestamp = str(c_time.timestamp())
-        timestamp = "_".join(timestamp.split("."))
-        np.save(f"min_loss_{index}", min_loss_values)
-        np.save(f"max_loss_{index}", max_loss_values)
+    # c_time = datetime.datetime.now()
+    # timestamp = str(c_time.timestamp())
+    # timestamp = "_".join(timestamp.split("."))
 
-        print(f"min:{float(min_bound)} , gt:{gt_ate},  max:{float(max_bound)}")
-        plt.plot(min_loss_values)
-        plt.plot(max_loss_values)
-        # plt.axhline(y=gt_ate, color='g', linestyle='dashed')
-        plt.axhline(y=empirical_mean, color='cyan', linestyle='dashed')
-        plt.axhline(y=biased_empirical_mean, color='olive', linestyle='dashed')
-        plt.legend(["min", "max",  "IPW", "Empirical IPW"])
-        plt.title("Average treatment effect.")# plt.title("Learning Curves for 10 trials.")
-        plt.savefig(f"losses_{timestamp}")
 
+    # print(f"min:{float(min_bound)} , gt:{gt_ate},  max:{float(max_bound)}")
+    # plt.plot(min_loss_values)
+    # plt.plot(max_loss_values)
+    # plt.axhline(y=gt_ate, color='g', linestyle='dashed')
+    # plt.axhline(y=biased_ipw, color='cyan', linestyle='dashed')
+    # # plt.axhline(y=empirical_biased_ipw, color='olive', linestyle='dashed')
+    # plt.legend(["min", "max",  "IPW", "Empirical IPW"])
+    # plt.title("Average treatment effect.")# plt.title("Learning Curves for 10 trials.")
+    # plt.savefig(f"losses_{timestamp}")
