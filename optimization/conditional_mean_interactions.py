@@ -4,6 +4,7 @@ import datetime
 import torch
 import numpy as np
 import cvxpy as cp
+import itertools
 
 import pandas as pd
 from typing import List
@@ -13,9 +14,10 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
-from folktables import ACSDataSource, ACSEmployment
 from framework import compute_ate_conditional_mean, build_counts, build_dataset, \
                       build_strata_counts_matrix, get_folks_tables_data
+
+
 
    
 def run_search(A_0, A_1,data_count_1, data_count_0,
@@ -28,6 +30,9 @@ def run_search(A_0, A_1,data_count_1, data_count_0,
     loss_values = []
     n_sample = data_count_1.sum() + data_count_0.sum()
     print(n_sample/dataset_size)
+    size_t = data_count_1.select(-1, 1).sum() + data_count_0.select(-1, 1).sum()
+    mean =  data_count_1.select(-1, 1).sum()/size_t
+    print("mean", mean)
     for iteration in range(3000):
         w = cp.Variable(weights_features.shape[1])
         alpha_fixed = alpha.squeeze().detach().numpy()
@@ -35,21 +40,28 @@ def run_search(A_0, A_1,data_count_1, data_count_0,
         A_1 = A1.numpy()
 
         objective = cp.sum_squares(w - alpha_fixed)
+        # restrictions = [A_0@ w == b0, A_1@ w == b1, weights_features@w >= 1]
+        # P(r|A=1) is bounded below by n/N
         restrictions = [A_0@ w == b0, A_1@ w == b1, weights_features@w >= n_sample/dataset_size]
         prob = cp.Problem(cp.Minimize(objective), restrictions)
         prob.solve()
-
+        # import pdb;pdb.set_trace()
         alpha.data = torch.tensor(w.value).float()
         weights_y1 = (weights_features@alpha).reshape(*data_count_1.shape)
-
+        # weighted_counts_1 = weights_y1*data_count_1*pr_r_t
         weighted_counts_1 = weights_y1*data_count_1
         weights_y0 = (weights_features@alpha).reshape(*data_count_0.shape)
-
+        # weighted_counts_0 = weights_y0*data_count_0*pr_r_t
         weighted_counts_0 = weights_y0*data_count_0
-
+        
         w_counts_1 = weighted_counts_1.select(-1, 1)
         w_counts_0 = weighted_counts_0.select(-1, 1)
-
+      
+        # first axis is race
+        # ht_A1 = w_counts_1.sum()
+        # ht_A0 = (prop_scores_0*w_counts_0).sum()
+        # N is known as it can be looked up from where the b were gathered.
+        # ate = ht_A1/DATASET_SIZE
         size = w_counts_1.sum() + w_counts_0.sum()
         ate = w_counts_1.sum()/size
         
@@ -68,26 +80,11 @@ def run_search(A_0, A_1,data_count_1, data_count_0,
         ret = min(loss_values)
 
     return ret, loss_values, alpha
+ 
+def traverse_combinations(list_of_lists):
+    for combination in itertools.product(*list_of_lists):
+        yield combination
 
-# ACSEmployment = folktables.BasicProblem(
-#     features=[
-#         'AGEP',
-#         'SCHL',
-#         'MAR',
-#         'RELP',
-#         'DIS',
-#         'ESP',
-#         'CIT',
-#         'MIG',
-#         'MIL',
-#         'ANC',
-#         'NATIVITY',
-#         'DEAR',
-#         'DEYE',
-#         'DREM',
-#         'SEX',
-#         'RAC1P',
-#     ],
 if __name__ == '__main__':
 
     X, label, sex, group = get_folks_tables_data()
@@ -107,13 +104,97 @@ if __name__ == '__main__':
     levels = [["white", "non-white"]] + levels
     print(levels)
     counts = build_counts(skewed_data, levels, "Creditability")
-
+    print(skewed_data.shape)
+    number_strata = 1
+    
+    for level in levels:
+        number_strata *= len(level)
+    
     number_strata = 1
     for level in levels:
         number_strata *= len(level)
     print(number_strata)
-    weights_features = torch.eye(number_strata)
-    # # Creates groundtruth values to generate linear restrictions.
+
+    idx = 0
+    idj = 0
+    idm = 0
+    idn = 0
+    weights_features = torch.zeros(number_strata, 5*4*2)
+    starting_tuple = ('0_0', '1_0', '2_0')
+    starting_com_3 = '2_0'
+    previous_comb_3 = starting_com_3
+    starting_com_2 = '1_0'
+    previous_comb_2 = starting_com_2
+    previous_tuple = starting_tuple
+
+    for combination in traverse_combinations(levels):
+        current_tuple = (combination[1], combination[2], combination[3])
+        current_comb_2 = combination[2]
+        current_comb_3 = combination[3]
+
+        if previous_tuple != current_tuple:
+            if current_tuple == starting_tuple:
+                idj = 0
+            else:
+                idj += 1
+        # import pdb;pdb.set_trace()
+        if previous_comb_3 != current_comb_3:
+            if current_comb_3 == starting_com_3:
+                idm = 0
+            else:
+                idm += 1
+        if previous_comb_2 != current_comb_2:
+            if current_comb_2 == starting_com_2:
+                idn = 0
+            else:
+                idn += 1
+        
+
+        weight = [0]*(5*4*2)
+        weight[idj] = 1
+
+        weight_2 = [0]*4
+        weight_2[idn] = 1
+        
+        weights_features[idx] = torch.tensor(weight).float()
+        idx += 1
+
+        previous_tuple = current_tuple
+        previous_comb_3 = current_comb_3
+        previous_comb_2 = current_comb_2
+
+    # for combination in traverse_combinations(levels):
+    #     current_tuple = (combination[0], combination[1], combination[2])
+    #     current_comb_3 = combination[3]
+
+    #     if previous_tuple != current_tuple:
+    #         if current_tuple == starting_tuple:
+    #             idj = 0
+    #         else:
+    #             idj += 1
+    #     # import pdb;pdb.set_trace()
+    #     if previous_comb_3 != current_comb_3:
+    #         if current_comb_3 == starting_com_3:
+    #             idm = 0
+    #         else:
+    #             idm += 1
+
+    #     weight = [0]*(2*5*4)
+    #     weight[idj] = 1
+
+    #     weight_3 = [0]*2
+    #     weight_3[idm] = 1
+        
+    #     weights_features[idx] = torch.tensor(weight + weight_3).float()
+    #     idx += 1
+
+    #     previous_tuple = current_tuple
+    #     previous_comb_3 = current_comb_3
+    print(weights_features.sum(axis=0))
+
+    print(number_strata)
+    # weights_features = torch.eye(number_strata)
+    # Creates groundtruth values to generate linear restrictions.
     y00_female = sum((data["Creditability"] == 0) & (data["white"] == 1))
     y01_female = sum((data["Creditability"] == 1) & (data["white"] == 1))
 
@@ -135,35 +216,37 @@ if __name__ == '__main__':
     data_count_1 = counts[1]
     A0, A1 = build_strata_counts_matrix(weights_features, counts, ["white", "non-white"])
     
-
-    # TODO (Santiago): Encapsulate benchmark generation process.
-    # gt_propensity_weighting_A = scipy.special.expit(X_raw[:,1] - X_raw[:,0]) 
-    # gt_propensity_weighting_R =  scipy.special.expit(X_raw[:, 0] - X_raw[:, 1])
-    # population_propensity_weighting_A = scipy.special.expit(X[:,1] - X[:,0])
-    # Which one make sense to use in this scenario?
-
     # gt_ate = compute_debias_ate_ipw()
-    biased_empirical_mean = compute_ate_conditional_mean(1 - sex_group, y)
+    # np.save("baselines", np.array([biased_empirical_mean, empirical_mean, ipw]))
+    # print("baselines:", [biased_empirical_mean, empirical_mean, ipw])
+    mean_race = compute_ate_conditional_mean(1 -group_sample, y)
+    mean_race_t = data_count_1[1].sum()/(data_count_1[1].sum() + data_count_0[1].sum()) 
+    print("test", mean_race, mean_race_t)
     
+    # Observed
+    biased_empirical_mean = compute_ate_conditional_mean(1 - sex_group, y)
+    mean_race_t = data_count_1.select(-1,1).sum()/(data_count_1.select(-1,1).sum() + data_count_0.select(-1,1).sum()) 
+    print("test_2", biased_empirical_mean, mean_race_t)
+    # Real
     empirical_mean = compute_ate_conditional_mean(1 - sex, label)
+    print(empirical_mean, biased_empirical_mean)
 
-    np.save("baselines", np.array([biased_empirical_mean, empirical_mean]))
-    print("baselines:", [biased_empirical_mean, empirical_mean])
+    gt_ate = empirical_mean
 
-    for index in range(10):
+    for index in range(1):
         upper_bound = True
-        max_bound, max_loss_values, alpha_max = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, empirical_mean, dataset_size)
+        max_bound, max_loss_values, alpha_max = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate, dataset_size)
 
         upper_bound = False
-        min_bound, min_loss_values, alpha_min = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, empirical_mean, dataset_size)
+        min_bound, min_loss_values, alpha_min = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate, dataset_size)
 
         c_time = datetime.datetime.now()
         timestamp = str(c_time.timestamp())
         timestamp = "_".join(timestamp.split("."))
-        np.save(f"min_loss_all_{index}", min_loss_values)
-        np.save(f"max_loss_all_{index}", max_loss_values)
+        np.save(f"min_loss_{index}", min_loss_values)
+        np.save(f"max_loss_{index}", max_loss_values)
 
-        print(f"min:{float(min_bound)} , gt:{empirical_mean},  max:{float(max_bound)}")
+        print(f"min:{float(min_bound)} , gt:{gt_ate},  max:{float(max_bound)}")
         plt.plot(min_loss_values)
         plt.plot(max_loss_values)
         # plt.axhline(y=gt_ate, color='g', linestyle='dashed')
