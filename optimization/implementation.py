@@ -15,6 +15,20 @@ from typing import List
 
 DATASET_SIZE = 100000 
 
+def compute_ate_conditional_mean(A, y):
+    """Computes the ate using inverse propensity weighting.
+
+    Args:
+        A (_type_): vector of observed outcomes
+        propensity_scores (_type_): Vector of propensity scores
+        y (_type_): response variable
+    
+    Returns
+        ate: Average treatment effect.
+    """
+    conditional_mean = (y*A).sum()
+    return conditional_mean/A.sum()
+
 def build_counts(data : pd.DataFrame, levels: List[List], target:str):
     """
     Given a dummie variable dataset this function returns a matrix counts
@@ -183,37 +197,92 @@ def compute_debias_ate_ipw():
 
     return y1_gt - y0_gt
    
+# def run_search(A_0, A_1,data_count_1, data_count_0,
+#                      weights_features, upper_bound, gt_ate, propensity_scores):
+#     """Runs the search for the optimal weights."""
+#     prop_scores_0 = 1/(1-propensity_scores)
+#     prop_scores_1 = 1/propensity_scores
+#     torch.autograd.set_detect_anomaly(True)
+#     alpha = torch.rand(weights_features.shape[1], requires_grad=True)
+#     optim = torch.optim.Adam([alpha], 0.01)
+#     loss_values = []
+#     for iteration in range(10000):
+#         w = cp.Variable(weights_features.shape[1])
+#         alpha_fixed = alpha.squeeze().detach().numpy()
+#         A_0 = A0.numpy()
+#         A_1 = A1.numpy()
+#         objective = cp.sum_squares(w - alpha_fixed)
+#         restrictions = [A_0@ w == b0, A_1@ w == b1, weights_features@w >= 1]
+#         prob = cp.Problem(cp.Minimize(objective), restrictions)
+#         prob.solve()
+        
+        
+#         alpha.data = torch.tensor(w.value).float()
+#         weights_y1 = (weights_features@alpha).reshape(*data_count_1.shape)
+#         weighted_counts_1 = weights_y1*data_count_1
+        
+#         w_counts_1 = weighted_counts_1[1] 
+#         w_counts_0 =  weighted_counts_1[0]
+
+#         ht_A1 = (prop_scores_1*w_counts_1).sum()
+#         ht_A0 = (prop_scores_0*w_counts_0).sum()
+#         # N is known as it can be looked up from where the b were gathered.
+#         ate = (ht_A1 - ht_A0)/DATASET_SIZE
+        
+#         loss = -ate if upper_bound else ate
+#         loss_values.append(ate.detach().numpy())
+#         if iteration % 500 == 0:
+#             print(f"ATE: {ate.item()}, ground_truth {gt_ate}")
+        
+#         optim.zero_grad()
+#         loss.backward()
+#         optim.step()
+
+#     if upper_bound:
+#         ret = max(loss_values)
+#     else:
+#         ret = min(loss_values)
+#     return ret, loss_values, alpha
 def run_search(A_0, A_1,data_count_1, data_count_0,
-                     weights_features, upper_bound, gt_ate, propensity_scores):
+                     weights_features, upper_bound, gt_ate, pr_r, dataset_size=DATASET_SIZE):
     """Runs the search for the optimal weights."""
-    prop_scores_0 = 1/(1-propensity_scores)
-    prop_scores_1 = 1/propensity_scores
+
+    pr_r_t = torch.tensor(pr_r)
     torch.autograd.set_detect_anomaly(True)
     alpha = torch.rand(weights_features.shape[1], requires_grad=True)
     optim = torch.optim.Adam([alpha], 0.01)
     loss_values = []
-    for iteration in range(10000):
+    n_sample = data_count_1.sum() + data_count_0.sum()
+    print(n_sample/dataset_size)
+    for iteration in range(3000):
         w = cp.Variable(weights_features.shape[1])
         alpha_fixed = alpha.squeeze().detach().numpy()
         A_0 = A0.numpy()
         A_1 = A1.numpy()
+
         objective = cp.sum_squares(w - alpha_fixed)
-        restrictions = [A_0@ w == b0, A_1@ w == b1, weights_features@w >= 1]
+        # restrictions = [A_0@ w == b0, A_1@ w == b1, weights_features@w >= 1]
+        restrictions = [A_0@ w == b0, A_1@ w == b1, weights_features@w >= n_sample/dataset_size]
         prob = cp.Problem(cp.Minimize(objective), restrictions)
         prob.solve()
         
-        
         alpha.data = torch.tensor(w.value).float()
         weights_y1 = (weights_features@alpha).reshape(*data_count_1.shape)
+        # weighted_counts_1 = weights_y1*data_count_1*pr_r_t
         weighted_counts_1 = weights_y1*data_count_1
-        
-        w_counts_1 = weighted_counts_1[1] 
-        w_counts_0 =  weighted_counts_1[0]
+        weights_y0 = (weights_features@alpha).reshape(*data_count_0.shape)
+        # weighted_counts_0 = weights_y0*data_count_0*pr_r_t
+        weighted_counts_0 = weights_y0*data_count_0
 
-        ht_A1 = (prop_scores_1*w_counts_1).sum()
-        ht_A0 = (prop_scores_0*w_counts_0).sum()
+        w_counts_1 = weighted_counts_1.select(-1, 1)
+        w_counts_0 = weighted_counts_0.select(-1, 1)
+        # first axis is race
+        # ht_A1 = w_counts_1.sum()
+        # ht_A0 = (prop_scores_0*w_counts_0).sum()
         # N is known as it can be looked up from where the b were gathered.
-        ate = (ht_A1 - ht_A0)/DATASET_SIZE
+        # ate = ht_A1/DATASET_SIZE
+        size = w_counts_1.sum() + w_counts_0.sum()
+        ate = w_counts_1.sum()/size
         
         loss = -ate if upper_bound else ate
         loss_values.append(ate.detach().numpy())
@@ -228,7 +297,9 @@ def run_search(A_0, A_1,data_count_1, data_count_0,
         ret = max(loss_values)
     else:
         ret = min(loss_values)
+
     return ret, loss_values, alpha
+
 
 def empirical_propensity_score(X, A):
     """Computes the empirical propensity scores.
@@ -281,6 +352,33 @@ if __name__ == '__main__':
                 features[idx] = 1
                 weights_features[idx] = torch.tensor(features).float()
                 idx += 1 
+    # weights_features = torch.zeros(12, 6)
+    # idx = 0
+    # for m, se in enumerate(["female", "male"]):
+    #     idm = 0
+    #     for j, income in enumerate(["little", "moderate", "quite rich"]):
+    #         for i, race in enumerate(["White", "Non White"]):
+    #             features = [0]*(3*2)
+    #             features[idm] = 1
+    #             weights_features[idx] = torch.tensor(features).float()
+    #             idx += 1 
+    #             idm += 1
+
+    # weights_features = torch.zeros(12, 8)
+    # idx = 0
+    # idj = 0
+    # for m, se in enumerate(["female", "male"]):
+    #     idm = 0
+    #     for j, income in enumerate(["little", "moderate", "quite rich"]):
+    #         for i, race in enumerate(["White", "Non White"]):
+    #             features = [0]*(3*2)
+    #             sex_features = [0]*2
+    #             features[idm] = 1
+    #             sex_features[idj] = 1
+    #             weights_features[idx] = torch.tensor(features + sex_features).float()
+    #             idx += 1 
+    #             idm += 1
+    #     idj += 1
 
     # Creates groundtruth values to generate linear restrictions.
     y00_female = sum((data["Creditability"] == 0) & (data["female"] == 1))
@@ -316,9 +414,21 @@ if __name__ == '__main__':
     biased_ipw = compute_ate_ipw(A, population_propensity_weighting_A, y)
     empirical_biased_ipw = compute_ate_ipw(A, empirical_probs, y)
     prop_score_tensor = prpensity_scores_by_strata([["little", "moderate", "quite rich"],["White", "Non White"]])
+    
+    emprical_conditonal_mean_1 = compute_ate_conditional_mean(X[:, -1], y)
+    # emprical_conditonal_mean_0 = compute_ate_conditional_mean(y, 1 - A)
+    # emp_ate = emprical_conditonal_mean_1 - emprical_conditonal_mean_0
+    true_conditonal_mean = compute_ate_conditional_mean(X_raw[:, -1], y_raw)
 
+    # import pdb; pdb.set_trace()
+    w_counts_1 = data_count_1.select(-1, 1)
+    w_counts_0 = data_count_0.select(-1, 1)
+    
+    size = w_counts_1.sum() + w_counts_0.sum()
+    ate = w_counts_1.sum()/size
+    print(f"Conditional mean: {ate}, {emprical_conditonal_mean_1}")
 
-    for i in range(1):
+    for index in range(10):
         upper_bound = True
         max_bound, max_loss_values, alpha_max = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate, prop_score_tensor)
 
@@ -328,14 +438,24 @@ if __name__ == '__main__':
         c_time = datetime.datetime.now()
         timestamp = str(c_time.timestamp())
         timestamp = "_".join(timestamp.split("."))
-
+        np.save(f"results_synthetic/min_loss_12_{index}", min_loss_values)
+        np.save(f"results_synthetic/max_loss_12_{index}", max_loss_values)
 
         print(f"min:{float(min_bound)} , gt:{gt_ate},  max:{float(max_bound)}")
         plt.plot(min_loss_values)
         plt.plot(max_loss_values)
-        plt.axhline(y=gt_ate, color='g', linestyle='dashed')
-        plt.axhline(y=biased_ipw, color='cyan', linestyle='dashed')
-        plt.axhline(y=empirical_biased_ipw, color='olive', linestyle='dashed')
-        plt.legend(["min", "max", "Ground truth ATE", "IPW", "Empirical IPW"])
-        plt.title("Average treatment effect.")# plt.title("Learning Curves for 10 trials.")
+        # plt.axhline(y=gt_ate, color='g', linestyle='dashed')
+        plt.axhline(y=true_conditonal_mean, color='cyan', linestyle='dashed')
+        plt.axhline(y=emprical_conditonal_mean_1, color='olive', linestyle='dashed')
+        plt.legend(["min", "max", "True Conditional mean", "Empirical conditional mean"])
+        plt.title("Conditional mean.")# plt.title("Learning Curves for 10 trials.")
+
+        # print(f"min:{float(min_bound)} , gt:{gt_ate},  max:{float(max_bound)}")
+        # plt.plot(min_loss_values)
+        # plt.plot(max_loss_values)
+        # plt.axhline(y=gt_ate, color='g', linestyle='dashed')
+        # plt.axhline(y=empirical_biased_ipw, color='cyan', linestyle='dashed')
+        # plt.axhline(y=emp_ate, color='olive', linestyle='dashed')
+        # plt.legend(["min", "max", "Ground truth ate", "IPW", "Empirical ate"])
+        # plt.title("Conditional mean.")# plt.title("Learning Curves for 10 trials.")
     plt.savefig(f"losses_{timestamp}")

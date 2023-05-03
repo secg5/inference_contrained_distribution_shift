@@ -33,7 +33,7 @@ def run_search(A_0, A_1,data_count_1, data_count_0,
     size_t = data_count_1.select(-1, 1).sum() + data_count_0.select(-1, 1).sum()
     mean =  data_count_1.select(-1, 1).sum()/size_t
     print("mean", mean)
-    for iteration in range(3000):
+    for iteration in range(5000):
         w = cp.Variable(weights_features.shape[1])
         alpha_fixed = alpha.squeeze().detach().numpy()
         A_0 = A0.numpy()
@@ -119,8 +119,8 @@ if __name__ == '__main__':
     idj = 0
     idm = 0
     idn = 0
-    weights_features = torch.zeros(number_strata, 5*4*2)
-    starting_tuple = ('0_0', '1_0', '2_0')
+    weights_features = torch.zeros(number_strata, 5*4 + 2 + 1)
+    starting_tuple = ('0_0', '1_0')
     starting_com_3 = '2_0'
     previous_comb_3 = starting_com_3
     starting_com_2 = '1_0'
@@ -128,7 +128,7 @@ if __name__ == '__main__':
     previous_tuple = starting_tuple
 
     for combination in traverse_combinations(levels):
-        current_tuple = (combination[1], combination[2], combination[3])
+        current_tuple = (combination[1], combination[2])
         current_comb_2 = combination[2]
         current_comb_3 = combination[3]
 
@@ -150,13 +150,13 @@ if __name__ == '__main__':
                 idn += 1
         
 
-        weight = [0]*(5*4*2)
+        weight = [0]*(5*4)
         weight[idj] = 1
 
-        weight_2 = [0]*4
-        weight_2[idn] = 1
+        weight_2 = [0]*2
+        weight_2[idm] = 1
         
-        weights_features[idx] = torch.tensor(weight).float()
+        weights_features[idx] = torch.tensor(weight + weight_2 + [1]).float()
         idx += 1
 
         previous_tuple = current_tuple
@@ -243,8 +243,8 @@ if __name__ == '__main__':
         c_time = datetime.datetime.now()
         timestamp = str(c_time.timestamp())
         timestamp = "_".join(timestamp.split("."))
-        np.save(f"min_loss_{index}", min_loss_values)
-        np.save(f"max_loss_{index}", max_loss_values)
+        np.save(f"numerical_results/min_loss_2+1_{index}", min_loss_values)
+        np.save(f"numerical_results/max_loss_2+1_{index}", max_loss_values)
 
         print(f"min:{float(min_bound)} , gt:{gt_ate},  max:{float(max_bound)}")
         plt.plot(min_loss_values)
@@ -256,3 +256,51 @@ if __name__ == '__main__':
         plt.title("Conditional mean.")# plt.title("Learning Curves for 10 trials.")
         plt.savefig(f"losses_{timestamp}")
 
+
+    # idx = 0
+    # idj = 0
+    # idm = 0
+    # idn = 0
+    # weights_features = torch.zeros(number_strata, 5*4*2)
+    # starting_tuple = ('0_0', '1_0', '2_0')
+    # starting_com_3 = '2_0'
+    # previous_comb_3 = starting_com_3
+    # starting_com_2 = '1_0'
+    # previous_comb_2 = starting_com_2
+    # previous_tuple = starting_tuple
+
+    # for combination in traverse_combinations(levels):
+    #     current_tuple = (combination[1], combination[2], combination[3])
+    #     current_comb_2 = combination[2]
+    #     current_comb_3 = combination[3]
+
+    #     if previous_tuple != current_tuple:
+    #         if current_tuple == starting_tuple:
+    #             idj = 0
+    #         else:
+    #             idj += 1
+    #     # import pdb;pdb.set_trace()
+    #     if previous_comb_3 != current_comb_3:
+    #         if current_comb_3 == starting_com_3:
+    #             idm = 0
+    #         else:
+    #             idm += 1
+    #     if previous_comb_2 != current_comb_2:
+    #         if current_comb_2 == starting_com_2:
+    #             idn = 0
+    #         else:
+    #             idn += 1
+        
+
+    #     weight = [0]*(5*4*2)
+    #     weight[idj] = 1
+
+    #     weight_2 = [0]*4
+    #     weight_2[idn] = 1
+        
+    #     weights_features[idx] = torch.tensor(weight).float()
+    #     idx += 1
+
+    #     previous_tuple = current_tuple
+    #     previous_comb_3 = current_comb_3
+    #     previous_comb_2 = current_comb_2

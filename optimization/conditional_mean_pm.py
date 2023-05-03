@@ -182,7 +182,7 @@ if __name__ == '__main__':
 
     gt_ate = empirical_mean
 
-    for index in range(1):
+    for index in range(10):
         upper_bound = True
         max_bound, max_loss_values, alpha_max = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate, dataset_size)
 
@@ -192,8 +192,8 @@ if __name__ == '__main__':
         c_time = datetime.datetime.now()
         timestamp = str(c_time.timestamp())
         timestamp = "_".join(timestamp.split("."))
-        np.save(f"min_loss_{index}", min_loss_values)
-        np.save(f"max_loss_{index}", max_loss_values)
+        np.save(f"numerical_results/min_loss_4_{index}", min_loss_values)
+        np.save(f"numerical_results/max_loss_4_{index}", max_loss_values)
 
         print(f"min:{float(min_bound)} , gt:{gt_ate},  max:{float(max_bound)}")
         plt.plot(min_loss_values)
