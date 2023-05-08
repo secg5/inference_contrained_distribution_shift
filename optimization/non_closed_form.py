@@ -32,7 +32,8 @@ def assign_weights(data, hash_map, weights_features):
     for i  in range(data_features.shape[0]):
         indexes = data_features.iloc[i,:] == 1
         columns_names = data_features.iloc[i,:][indexes].index
-        tuple_features = (columns_names[-1], columns_names[0], columns_names[1], columns_names[2])
+        # tuple_features = (columns_names[-1], columns_names[0], columns_names[1], columns_names[2])
+        tuple_features = (columns_names[0], columns_names[1], columns_names[2])
         weight_index = hash_map[tuple_features]
         weight = weights_features[weight_index]
         weigths.append(weight)
@@ -129,7 +130,7 @@ def run_search(A_0, A_1,data_count_1, data_count_0,
         # import pdb;pdb.set_trace()
         alpha.data = torch.tensor(w.value).float()
         weitght_loss = weights_array @ alpha
-        for epoch in range(150):
+        for epoch in range(100):
             # Step 1. Remember that PyTorch accumulates gradients.
             # We need to clear them out before each instance
             model.zero_grad()
@@ -157,7 +158,7 @@ def run_search(A_0, A_1,data_count_1, data_count_0,
         # TODO: Check if the gradeint on alpha is backpropagating trough the inner loop.
         # import pdb; pdb.set_trace()
         
-        loss =  model.linear.weight[0][-1]
+        loss =  model.linear.weight[0][0]
         beta = -loss if upper_bound else loss
         loss_values.append(beta.detach().numpy())
         if iteration % 500 == 0:
@@ -207,11 +208,13 @@ if __name__ == '__main__':
     ground_truth_model = LogisticRegression(random_state=0).fit(skewed_data, y)
     
     # import pdb; pdb.set_trace()
-    print(baseline_model.coef_[0][-2])
-    print(ground_truth_model.coef_[0][-2])
+    print(X_sample.shape[0])
+    print(baseline_model.coef_[0][0])
+    print(X.shape[0])
+    print(ground_truth_model.coef_[0][0])
 
-    baseline = baseline_model.coef_[0][-2]
-    ground_truth = ground_truth_model.coef_[0][-2]
+    baseline = baseline_model.coef_[0][0]
+    ground_truth = ground_truth_model.coef_[0][0]
 
     for level in levels:
         number_strata *= len(level)
@@ -223,20 +226,21 @@ if __name__ == '__main__':
 
     idx = 0
     idj = 0
-    weights_features = torch.zeros(number_strata, 2*5*4*2)
-    starting_tuple = ("white", '0_0', '1_0', '2_0')
+    weights_features = torch.zeros(number_strata, 5*4*2)
+    # starting_tuple = ("white", '0_0', '1_0', '2_0')
+    starting_tuple = ('0_0', '1_0', '2_0')
     previous_tuple = starting_tuple
     flag = True
     hash_map = {}
 
     for combination in traverse_combinations(levels):
-        current_tuple = (combination[0], combination[1], combination[2], combination[3])
+        current_tuple = (combination[1], combination[2], combination[3])
         if previous_tuple != current_tuple:
             if current_tuple == starting_tuple:
                 idj = 0
             else:
                 idj += 1
-        weight = [0]*(2*5*4*2)
+        weight = [0]*(5*4*2)
         weight[idj] = 1
         weights_features[idx] = torch.tensor(weight).float()
 
