@@ -5,16 +5,19 @@ import torch
 import numpy as np
 import cvxpy as cp
 import itertools
+import time
 
 import pandas as pd
 from typing import List
 import matplotlib.pyplot as plt
+from cvxpylayers.torch import CvxpyLayer
 
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from model import WeightedLogisticRegression
+from torch.linalg import inv, lstsq
 from framework import compute_ate_conditional_mean, build_counts, build_dataset, \
                       build_strata_counts_matrix, get_folks_tables_data
 
@@ -34,6 +37,8 @@ def assign_weights(data, hash_map, weights_features):
         columns_names = data_features.iloc[i,:][indexes].index
         # tuple_features = (columns_names[-1], columns_names[0], columns_names[1], columns_names[2])
         tuple_features = (columns_names[0], columns_names[1], columns_names[2])
+        # import pdb; pdb.set_trace()
+        # tuple_features = (columns_names[-1], columns_names[0], columns_names[1], columns_names[2], columns_names[3], columns_names[4], columns_names[5], columns_names[6])
         weight_index = hash_map[tuple_features]
         weight = weights_features[weight_index]
         weigths.append(weight)
@@ -104,69 +109,80 @@ def run_search(A_0, A_1,data_count_1, data_count_0,
    
     loss_function = torch.nn.BCELoss()
     # Two optimizers, they have the relevant parameters to optimize.
-    model = WeightedLogisticRegression(NUM_FEATURES, NUM_LABELS)
+    
     torch.autograd.set_detect_anomaly(True)
     alpha = torch.rand(weights_features.shape[1], requires_grad=True)
-    optim = torch.optim.Adam([alpha], 0.01)
-    optim_2 = torch.optim.Adam(params=model.parameters(), lr=0.0001)
+    optim = torch.optim.Adam([alpha], 0.000001)
     loss_values = []
     n_sample = data_count_1.sum() + data_count_0.sum()
-    print(n_sample/dataset_size)
-    size_t = data_count_1.select(-1, 1).sum() + data_count_0.select(-1, 1).sum()
-    mean =  data_count_1.select(-1, 1).sum()/size_t
-    print("mean", mean)
-    for iteration in range(2000):
+    
+    features = data.to_numpy().astype(np.double)
+    features = np.concatenate([features, np.ones((features.shape[0],1))], axis =-1)
+    features_tensor = torch.tensor(features).float()
+    target = torch.tensor(labels, dtype = torch.long).float()
+    target = torch.unsqueeze(target, -1)
+    
+    # model = WeightedLogisticRegression(features_tensor, target, weights_array)
+    for iteration in range(100):
         w = cp.Variable(weights_features.shape[1])
         alpha_fixed = alpha.squeeze().detach().numpy()
         A_0 = A0.numpy()
         A_1 = A1.numpy()
 
         objective = cp.sum_squares(w - alpha_fixed)
-        # restrictions = [A_0@ w == b0, A_1@ w == b1, weights_features@w >= 1]
-        # P(r|A=1) is bounded below by n/N
+    
         restrictions = [A_0@ w == b0, A_1@ w == b1, weights_features@w >= n_sample/dataset_size]
         prob = cp.Problem(cp.Minimize(objective), restrictions)
         prob.solve()
-        # import pdb;pdb.set_trace()
+        
         alpha.data = torch.tensor(w.value).float()
-        weitght_loss = weights_array @ alpha
-        for epoch in range(100):
-            # Step 1. Remember that PyTorch accumulates gradients.
-            # We need to clear them out before each instance
-            model.zero_grad()
+        weights = weights_array @ alpha
+        weights = torch.sqrt(weights)
+        W = torch.eye(weights.shape[0])*weights
+        coeff = lstsq(W@features_tensor, W@target)
+        # coeff = inv((features_tensor.T @ W) @features_tensor) @ (features_tensor.T @ W) @ target
+        # start_time = time.time()
+        # coeff = model(alpha_formatted)
+        # print("--- %s seconds ---" % (time.time() - start_time))
+        # for epoch in range(4000):
+        #     # Step 1. Remember that PyTorch accumulates gradients.
+        #     # We need to clear them out before each instance
+        #     model.zero_grad()
 
-            # Step 2.
-            # import pdb; pdb.set_trace()
-            features = data.to_numpy().astype(np.double)
-            features_tensor = torch.tensor(features).float()
-            # Step 3. Run our forward pass.
-            # import pdb; pdb.set_trace()
-            probs = model(features_tensor) * torch.unsqueeze(weitght_loss, -1)
+        #     # Step 2.
+        #     # import pdb; pdb.set_trace()
+        #     features = data.to_numpy().astype(np.double)
+        #     features_tensor = torch.tensor(features).float()
+        #     # Step 3. Run our forward pass.
+        #     # import pdb; pdb.set_trace()
+        #     probs = model(features_tensor) * torch.unsqueeze(weitght_loss, -1)
 
-            with torch.no_grad():            
-                    probs.clamp_(0, 1)
+        #     with torch.no_grad():            
+        #             probs.clamp_(0, 1)
             
-            target = torch.tensor(labels, dtype = torch.long).float()
-            target = torch.unsqueeze(target, -1)
+            
+        #     target = torch.unsqueeze(target, -1)
 
-            # Step 4. Compute the loss, gradients, and update the parameters by
-            loss = loss_function(probs, target)
-
-            if loss.requires_grad:
-                loss.backward(create_graph=True)
-                optim_2.step()
+        #     # Step 4. Compute the loss, gradients, and update the parameters by
+        #     loss = loss_function(probs, target)
+        #     rl_loss .append(loss.detach().numpy())
+        #     if loss.requires_grad:
+        #         loss.backward(create_graph=True)
+        #         optim_2.step()
+        # plt.plot(rl_loss)
+        # plt.savefig("test")
+        # plt.close()
         # TODO: Check if the gradeint on alpha is backpropagating trough the inner loop.
         # import pdb; pdb.set_trace()
         
-        loss =  model.linear.weight[0][0]
-        beta = -loss if upper_bound else loss
+        loss_1 =  coeff[0][0]
+        beta = -loss_1 if upper_bound else loss_1
         loss_values.append(beta.detach().numpy())
-        if iteration % 500 == 0:
-            print(loss)
+        if iteration % 10 == 0:
             print(f"ATE: {beta.item()}, ground_truth {gt_ate}")
         
         optim.zero_grad()
-        loss.backward()
+        beta.backward()
         optim.step()
 
     if upper_bound:
@@ -183,10 +199,10 @@ def traverse_combinations(list_of_lists):
 if __name__ == '__main__':
 
     X, label, sex, group = get_folks_tables_data()
-   
+    X, label, sex, group =  X[1:4000], label[1:4000], sex[1:4000], group[1:4000]
     dataset_size = X.shape[0]
-    obs = scipy.special.expit(X[:,0] - X[:,1] + X[:,2]) > np.random.uniform(size=dataset_size)
-    
+    X[:,4], X[:,2] = X[:,2], X[:,4]
+    obs = scipy.special.expit(X[:,0] - X[:,1] - X[:,2]) > np.random.uniform(size=dataset_size)
     # Generates the data.
     X_sample, group_sample, y = X[obs], group[obs], label[obs]
     sex_group = sex[obs]
@@ -203,30 +219,31 @@ if __name__ == '__main__':
     counts = build_counts(skewed_data, levels, "Creditability")
     print(skewed_data.shape)
     number_strata = 1
-
+    start_time = time.time()
     baseline_model = LogisticRegression(random_state=0).fit(data, label)
+    print("--- %s seconds ---" % (time.time() - start_time))
     ground_truth_model = LogisticRegression(random_state=0).fit(skewed_data, y)
     
-    # import pdb; pdb.set_trace()
-    print(X_sample.shape[0])
-    print(baseline_model.coef_[0][0])
-    print(X.shape[0])
-    print(ground_truth_model.coef_[0][0])
-
     baseline = baseline_model.coef_[0][0]
+    # print(ground_truth_model.coef_[0].shape)
     ground_truth = ground_truth_model.coef_[0][0]
 
     for level in levels:
         number_strata *= len(level)
     
-    number_strata = 1
-    for level in levels:
-        number_strata *= len(level)
-    print(number_strata)
+    # weights_features = torch.eye(number_strata)
+    # idx = 0
+    # hash_map = {}
 
+    # for combination in traverse_combinations(levels):
+    #     hash_map[combination] = idx
+    #     idx += 1
+    # print("weights_features shpae", weights_features.shape)
+    
     idx = 0
     idj = 0
     weights_features = torch.zeros(number_strata, 5*4*2)
+    print(weights_features.shape)
     # starting_tuple = ("white", '0_0', '1_0', '2_0')
     starting_tuple = ('0_0', '1_0', '2_0')
     previous_tuple = starting_tuple
@@ -242,6 +259,7 @@ if __name__ == '__main__':
                 idj += 1
         weight = [0]*(5*4*2)
         weight[idj] = 1
+        # import pdb; pdb.set_trace()
         weights_features[idx] = torch.tensor(weight).float()
 
         hash_map[current_tuple] = idx
@@ -265,24 +283,17 @@ if __name__ == '__main__':
     y00_male = sum((data["Creditability"] == 0) & (data["non-white"] == 1))
     y01_male = sum((data["Creditability"] == 1) & (data["non-white"] == 1))
 
-    bias_y00_female = sum((skewed_data["Creditability"] == 0) & (skewed_data["white"] == 1))
-    bias_y01_female = sum((skewed_data["Creditability"] == 1) & (skewed_data["non-white"] == 1))
-
-    bias_y00_male = sum((skewed_data["Creditability"] == 0) & (skewed_data["white"] == 1))
-    bias_y01_male = sum((skewed_data["Creditability"] == 1) & (skewed_data["non-white"] == 1))
-
     b0 = np.array([y00_female, y00_male])
     b1 = np.array([y01_female, y01_male])
-    obs_b0 = np.array([bias_y00_female, bias_y00_male])
-    obs_b1 = np.array([bias_y01_female, bias_y01_male])
+
 
     data_count_0 = counts[0]
     data_count_1 = counts[1]
     A0, A1 = build_strata_counts_matrix(weights_features, counts, ["white", "non-white"])
     
-    # # gt_ate = compute_debias_ate_ipw()
-    # # np.save("baselines", np.array([biased_empirical_mean, empirical_mean, ipw]))
-    # # print("baselines:", [biased_empirical_mean, empirical_mean, ipw])
+    # gt_ate = compute_debias_ate_ipw()
+    np.save("baselines_non_closed", np.array([baseline, ground_truth]))
+    print("baselines:", [baseline, ground_truth])
     mean_race = compute_ate_conditional_mean(1 - group_sample, y)
     mean_race_t = data_count_1[1].sum()/(data_count_1[1].sum() + data_count_0[1].sum()) 
     print("test", mean_race, mean_race_t)
@@ -301,6 +312,7 @@ if __name__ == '__main__':
     print(f"NUM_FEATURES : {NUM_FEATURES}")
     NUM_LABELS = 1
     skewed_data_features = skewed_data[skewed_data.columns[:-1]] 
+    # import pdb; pdb.set_trace()
     for index in range(1):
         upper_bound = True
         max_bound, max_loss_values, alpha_max = run_search(A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate, dataset_size, skewed_data_features, y, weights_array)
@@ -311,8 +323,8 @@ if __name__ == '__main__':
         c_time = datetime.datetime.now()
         timestamp = str(c_time.timestamp())
         timestamp = "_".join(timestamp.split("."))
-    #     np.save(f"numerical_results/min_loss_4_{index}", min_loss_values)
-    #     np.save(f"numerical_results/max_loss_4_{index}", max_loss_values)
+        np.save(f"non_close_results/min_loss_tight_{index}", min_loss_values)
+        np.save(f"non_close_results/max_loss_tight_{index}", max_loss_values)
 
         print(f"min:{float(min_bound)} , gt:{gt_ate},  max:{float(max_bound)}")
         plt.plot(min_loss_values)
