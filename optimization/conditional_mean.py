@@ -112,6 +112,7 @@ if __name__ == '__main__':
     for level in levels:
         number_strata *= len(level)
     print(number_strata)
+
     weights_features = torch.eye(number_strata)
     # # Creates groundtruth values to generate linear restrictions.
     y00_female = sum((data["Creditability"] == 0) & (data["white"] == 1))
@@ -135,16 +136,7 @@ if __name__ == '__main__':
     data_count_1 = counts[1]
     A0, A1 = build_strata_counts_matrix(weights_features, counts, ["white", "non-white"])
     
-
-    # TODO (Santiago): Encapsulate benchmark generation process.
-    # gt_propensity_weighting_A = scipy.special.expit(X_raw[:,1] - X_raw[:,0]) 
-    # gt_propensity_weighting_R =  scipy.special.expit(X_raw[:, 0] - X_raw[:, 1])
-    # population_propensity_weighting_A = scipy.special.expit(X[:,1] - X[:,0])
-    # Which one make sense to use in this scenario?
-
-    # gt_ate = compute_debias_ate_ipw()
     biased_empirical_mean = compute_ate_conditional_mean(1 - sex_group, y)
-    
     empirical_mean = compute_ate_conditional_mean(1 - sex, label)
 
     np.save("baselines", np.array([biased_empirical_mean, empirical_mean]))
@@ -166,7 +158,6 @@ if __name__ == '__main__':
         print(f"min:{float(min_bound)} , gt:{empirical_mean},  max:{float(max_bound)}")
         plt.plot(min_loss_values)
         plt.plot(max_loss_values)
-        # plt.axhline(y=gt_ate, color='g', linestyle='dashed')
         plt.axhline(y=empirical_mean, color='cyan', linestyle='dashed')
         plt.axhline(y=biased_empirical_mean, color='olive', linestyle='dashed')
         plt.legend(["min", "max",  "True condintional mean", "Empirical conditional mean"])

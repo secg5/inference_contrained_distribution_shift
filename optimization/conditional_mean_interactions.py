@@ -243,8 +243,8 @@ if __name__ == '__main__':
         c_time = datetime.datetime.now()
         timestamp = str(c_time.timestamp())
         timestamp = "_".join(timestamp.split("."))
-        np.save(f"numerical_results/min_loss_2+1_{index}", min_loss_values)
-        np.save(f"numerical_results/max_loss_2+1_{index}", max_loss_values)
+        # np.save(f"numerical_results/min_loss_2+1_{index}", min_loss_values)
+        # np.save(f"numerical_results/max_loss_2+1_{index}", max_loss_values)
 
         print(f"min:{float(min_bound)} , gt:{gt_ate},  max:{float(max_bound)}")
         plt.plot(min_loss_values)

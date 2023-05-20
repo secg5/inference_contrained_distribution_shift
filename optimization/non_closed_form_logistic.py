@@ -99,7 +99,7 @@ def run_search(A_0, A_1,data_count_1, data_count_0,
     
     optim = torch.optim.Adam([alpha], 0.9)
     print(features_tensor.shape)
-    for iteration in range(150):
+    for iteration in range(200):
         w = cp.Variable(weights_features.shape[1])
         alpha_fixed = alpha.squeeze().detach().numpy()
         A_0 = A0.numpy()
@@ -107,7 +107,7 @@ def run_search(A_0, A_1,data_count_1, data_count_0,
 
         objective = cp.sum_squares(w - alpha_fixed)
     
-        restrictions = [A_0@ w == b0, A_1@ w == b1,  weights_features@w >= n_sample/dataset_size]
+        restrictions = [A_0@ w == b0, A_1@ w == b1, weights_features@w >= n_sample/dataset_size]
         prob = cp.Problem(cp.Minimize(objective), restrictions)
         prob.solve()
         
@@ -115,43 +115,43 @@ def run_search(A_0, A_1,data_count_1, data_count_0,
         
         weights = weights_array @ alpha
 
-        weights = weights_array @ alpha
-        # weights.data = torch.clamp(weights, min=0.001)
-        # import pdb; pdb.set_trace()
-
-        sq_weights = torch.sqrt(weights)
-        W = torch.eye(weights.shape[0])*sq_weights
-        coeff = lstsq(W@features_tensor, W@target,  driver = 'gelsd')
-        
-        # weights.data = torch.clamp(weights, min=0.001)
-        # import pdb; pdb.set_trace()
-
-        # features_tensor = features_tensor.double()
-        # weights = weights.unsqueeze(1)
-        # # weights = torch.ones(features_tensor.shape[0], 1).double()
-        # lgit_loss = []
-        # with torch.no_grad():
-        #     coeff = torch.zeros(features_tensor.shape[1], 1).double()
-        #     for _ in range(40):
-        #         p = torch.sigmoid(features_tensor@coeff)
-        #         Wsqrt = torch.sqrt(weights*p*(1-p))
-        #         Winv =  (1/(weights*p*(1-p)))
-        #         z = features_tensor@coeff + Winv*(target - p)
-        #         coeff = lstsq(Wsqrt*features_tensor, Wsqrt*z , driver = 'gelsd')[0]
-        #         loglik = (target*torch.log(p) + (1-target)*torch.log(1-p)).mean().item()
-        #         # print(loglik)
-        #         lgit_loss.append(loglik)
-       
-        # # plt.plot(lgit_loss)
-        # # plt.savefig("test.png")
+        # weights = weights_array @ alpha
+        # # weights.data = torch.clamp(weights, min=0.001)
         # # import pdb; pdb.set_trace()
-        # # plt.close()
+
+        # sq_weights = torch.sqrt(weights)
+        # W = torch.eye(weights.shape[0])*sq_weights
+        # coeff = lstsq(W@features_tensor, W@target,  driver = 'gelsd')
         
-        # p = torch.sigmoid(features_tensor@coeff)
-        # Wsqrt = torch.sqrt(weights*p*(1-p))
-        # Winv =  (1/(weights*p*(1-p)))
-        # z = features_tensor@coeff + Winv*(target - p)
-        # coeff = lstsq(Wsqrt*features_tensor, Wsqrt*z )[0]
+        # weights.data = torch.clamp(weights, min=0.001)
+        # import pdb; pdb.set_trace()
+
+        features_tensor = features_tensor.double()
+        weights = weights.unsqueeze(1)
+        # weights = torch.ones(features_tensor.shape[0], 1).double()
+        lgit_loss = []
+        with torch.no_grad():
+            coeff = torch.zeros(features_tensor.shape[1], 1).double()
+            for _ in range(40):
+                p = torch.sigmoid(features_tensor@coeff)
+                Wsqrt = torch.sqrt(weights*p*(1-p))
+                Winv =  (1/(weights*p*(1-p)))
+                z = features_tensor@coeff + Winv*(target - p)
+                coeff = lstsq(Wsqrt*features_tensor, Wsqrt*z , driver = 'gelsd')[0]
+                loglik = (target*torch.log(p) + (1-target)*torch.log(1-p)).mean().item()
+                # print(loglik)
+                lgit_loss.append(loglik)
+       
+        # plt.plot(lgit_loss)
+        # plt.savefig("test.png")
+        # import pdb; pdb.set_trace()
+        # plt.close()
+        
+        p = torch.sigmoid(features_tensor@coeff)
+        Wsqrt = torch.sqrt(weights*p*(1-p))
+        Winv =  (1/(weights*p*(1-p)))
+        z = features_tensor@coeff + Winv*(target - p)
+        coeff = lstsq(Wsqrt*features_tensor, Wsqrt*z )[0]
         
         loss_1 =  coeff[0][0]
         if iteration == 0:
@@ -217,13 +217,13 @@ if __name__ == '__main__':
     number_strata = 1
     start_time = time.time()
     
-    ground_truth_model =  LinearRegression().fit(data.iloc[:,:-1], label)
-    baseline_model = LinearRegression().fit(skewed_data.iloc[:,:-1], y)
+    ground_truth_model =  LogisticRegression().fit(data.iloc[:,:-1], label)
+    baseline_model = LogisticRegression().fit(skewed_data.iloc[:,:-1], y)
     print("ground_truth_model_sklearn", ground_truth_model.coef_[0])
     print("baseline_sklearn", baseline_model.coef_[0])
     # import pdb; pdb.set_trace()
-    baseline = baseline_model.coef_[0]
-    ground_truth = ground_truth_model.coef_[0]
+    baseline = baseline_model.coef_[0][0]
+    ground_truth = ground_truth_model.coef_[0][0]
 
     print("=======Sanity check=======")
     features_tensor_gt, target_gt = create_features_tensor(data, label)
@@ -315,8 +315,8 @@ if __name__ == '__main__':
         c_time = datetime.datetime.now()
         timestamp = str(c_time.timestamp())
         timestamp = "_".join(timestamp.split("."))
-        np.save(f"non_close_results/min_loss_full_g{index}", min_loss_values)
-        np.save(f"non_close_results/max_loss_full_g{index}", max_loss_values)
+        np.save(f"non_close_results/min_loss_logistic_full_{index}", min_loss_values)
+        np.save(f"non_close_results/max_loss_logistic_full_{index}", max_loss_values)
 
         # print(f"min:{float(min_bound)} , gt:{ground_truth},  max:{float(max_bound)}")
         plt.plot(min_loss_values)
@@ -325,8 +325,7 @@ if __name__ == '__main__':
         plt.axhline(y=baseline, color='olive', linestyle='dashed')
         # plt.legend(["min", "max", "Ground truth", "baseline"])
         plt.title("Model output.")# plt.title("Learning Curves for 10 trials.")
-        # import pdb; pdb.set_trace()
-        plt.savefig(f"two_rest_losses_{timestamp}")
+        plt.savefig(f"loistic_losses_{timestamp}")
 
 # y=-0.5062343240376521, linestyle='dashed', label = "True value")
 # ax.axhline(y=-0.4858996811766751
