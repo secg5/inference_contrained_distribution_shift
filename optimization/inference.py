@@ -9,11 +9,15 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import torch
+import pickle
 from tqdm import tqdm
 
 import config
 from datasets import FolktablesLoader, SimulationLoader
 
+def traverse_combinations(list_of_lists):
+    for combination in itertools.product(*list_of_lists):
+        yield combination
 
 def get_feature_weights(
     matrix_type: str, dataset_type: str, levels: List[List[str]]
@@ -79,57 +83,50 @@ def get_feature_weights(
                 f"Invalid feature matrix type {matrix_type} for simulated dataset."
             )
     elif dataset_type == "folktables":
-        if matrix_type == "Nx12":
-            number_strata = 1
-            for level in levels:
-                number_strata *= len(level)
-            print(number_strata)
+        number_strata = 1
+        for level in levels:
+            number_strata *= len(level)
 
+        if matrix_type == "Nx12":
+            feature_weights = torch.eye(number_strata)
+            return feature_weights
+        elif matrix_type == "Nx8":
             idx = 0
             idj = 0
-            idm = 0
-            idn = 0
-            feature_weights = torch.zeros(number_strata, 5 * 4 + 2 + 1)
-            starting_tuple = (levels[1][0], levels[2][0])
-            starting_com_3 = levels[3][0]
-            previous_comb_3 = starting_com_3
-            starting_com_2 = levels[2][0]
-            previous_comb_2 = starting_com_2
+            feature_weights = torch.zeros(number_strata, 5*4*2)
+            starting_tuple = ('MIL_0', 'ANC_0', 'NATIVITY_0')
             previous_tuple = starting_tuple
-
-            for combination in traverse_level_combinations(levels):
-                current_tuple = (combination[1], combination[2])
-                current_comb_2 = combination[2]
-                current_comb_3 = combination[3]
-
+            for combination in traverse_combinations(levels):
+                current_tuple = (combination[1], combination[2], combination[3])
                 if previous_tuple != current_tuple:
                     if current_tuple == starting_tuple:
                         idj = 0
                     else:
                         idj += 1
-                if previous_comb_3 != current_comb_3:
-                    if current_comb_3 == starting_com_3:
-                        idm = 0
-                    else:
-                        idm += 1
-                if previous_comb_2 != current_comb_2:
-                    if current_comb_2 == starting_com_2:
-                        idn = 0
-                    else:
-                        idn += 1
-
-                weight = [0] * (5 * 4)
+                weight = [0]*(5*4*2)
                 weight[idj] = 1
-
-                weight_2 = [0] * 2
-                weight_2[idm] = 1
-
-                feature_weights[idx] = torch.tensor(weight + weight_2 + [1]).float()
+                feature_weights[idx] = torch.tensor(weight).float()
                 idx += 1
-
                 previous_tuple = current_tuple
-                previous_comb_3 = current_comb_3
-                previous_comb_2 = current_comb_2
+            return feature_weights
+        elif matrix_type == "Nx6":
+            idx = 0
+            idj = 0
+            feature_weights = torch.zeros(number_strata, 5*4*2)
+            starting_tuple = ('MIL_0', 'ANC_0', 'NATIVITY_0')
+            previous_tuple = starting_tuple
+            for combination in traverse_combinations(levels):
+                current_tuple = (combination[1], combination[2], combination[3])
+                if previous_tuple != current_tuple:
+                    if current_tuple == starting_tuple:
+                        idj = 0
+                    else:
+                        idj += 1
+                weight = [0]*(5*4*2)
+                weight[idj] = 1
+                feature_weights[idx] = torch.tensor(weight).float()
+                idx += 1
+                previous_tuple = current_tuple
             return feature_weights
         else:
             raise ValueError(
@@ -163,6 +160,7 @@ def get_strata_counts(
     strata_dfs: Dict[Tuple, pd.DataFrame], levels: List[List[str]]
 ) -> torch.Tensor:
     strata_counts = list()
+    # Ensure same order?
     for strata_df in strata_dfs.values():
         if strata_df.shape[0] == 0:
             strata_counts.append(0.00001)
@@ -186,6 +184,13 @@ def get_count_restrictions(
     restriction_01 = np.array([y01_val_1, y01_val_2])
 
     return restriction_00, restriction_01
+
+def compute_f_divergence(p, q, type="chi2"):
+    if type == "chi2":
+        # return 0.5 * torch.sum((p-q)**2/(p+q+1e-8))
+        return 0.5 * torch.sum((p-q)**2/(q+1e-8))
+    else:
+        raise ValueError(f"Invalid divergence type {type}.")
 
 
     # # Creates groundtruth values to generate linear restrictions *for other outcome*.
@@ -289,7 +294,8 @@ def build_strata_counts_matrix(
 
 
 def get_restrictions(
-    restriction_type: str, A_dict, w, restriction_values, n_sample, dataset_size
+    restriction_type: str, A_dict, w, restriction_values, n_sample, 
+    dataset_size, rho, ratio, q
 ):
     restrictions = [feature_weights @ w >= n_sample / dataset_size]
     if restriction_type == "count":
@@ -307,6 +313,9 @@ def get_restrictions(
             A_dict["count_plus"][1] @ w == restriction_values["count_plus"][1],
             A_dict["count_plus"][3] @ w == restriction_values["count_plus"][3],
         ]
+    elif restriction_type == "DRO":
+       chi_square_divergence = cp.multiply((ratio - 1)**2, q)
+       restrictions += [ .5 * cp.sum(chi_square_divergence) <= rho]
     else:
         raise ValueError(f"Restriction type {restriction_type} not supported.")
     return restrictions
@@ -321,6 +330,7 @@ def run_search(
     n_iters,
     restriction_type,
     dataset_size,
+    rho
 ):
     """Runs the search for the optimal weights."""
 
@@ -339,6 +349,11 @@ def run_search(
         w = cp.Variable(feature_weights.shape[1])
         alpha_fixed = alpha.squeeze().detach().numpy()
 
+        ratio = feature_weights @ w
+        q = (data_count_1 + data_count_0) / n_sample
+        q = q.reshape(-1, 1)
+        q = torch.flatten(q)
+
         objective = cp.sum_squares(w - alpha_fixed)
         restrictions = get_restrictions(
             restriction_type=restriction_type,
@@ -347,8 +362,11 @@ def run_search(
             restriction_values=restriction_values,
             n_sample=n_sample,
             dataset_size=dataset_size,
+            rho=rho,
+            ratio=ratio,
+            q=q
         )
-        # import pdb; pdb.set_trace()
+
         prob = cp.Problem(cp.Minimize(objective), restrictions)
         prob.solve()
 
@@ -392,6 +410,7 @@ if __name__ == "__main__":
         dataset = data_loader.load()
         treatment_level = dataset.levels[0]
         dataset_size = dataset.population_df.shape[0]
+        sample_size = dataset.sample_df.shape[0]
     elif config.dataset_type == "folktables":
         data_loader = FolktablesLoader(
             rng=rng, states=config.states, feature_names=config.feature_names
@@ -399,6 +418,7 @@ if __name__ == "__main__":
         dataset = data_loader.load()
         treatment_level = dataset.levels[0]
         dataset_size = dataset.population_df.shape[0]
+        sample_size = dataset.sample_df.shape[0]
 
     restriction_values = {
         "count": get_count_restrictions(
@@ -430,6 +450,11 @@ if __name__ == "__main__":
         levels=dataset.levels, 
         target=dataset.alternate_outcome
     )
+    strata_dfs_population = get_feature_strata(
+        df=dataset.population_df, 
+        levels=dataset.levels, 
+        target=dataset.target
+    )
 
     strata_estimands = {
         "count": get_strata_counts(
@@ -440,6 +465,18 @@ if __name__ == "__main__":
         )
     }
 
+    strata_estimands_population = {
+        "DRO": get_strata_counts(
+            strata_dfs=strata_dfs_population, levels=dataset.levels
+        )
+    }
+
+    rho = compute_f_divergence(
+                            strata_estimands_population["DRO"]/dataset_size,
+                            strata_estimands["count"]/sample_size,
+                            type="chi2"
+                            )
+    print("rho: ", rho)
     c_time = datetime.datetime.now()
     timestamp = str(c_time.strftime("%b%d-%H%M"))
     plotting_dfs = []
@@ -470,6 +507,8 @@ if __name__ == "__main__":
             total=len(config.restriction_trials),
             leave=False,
         ):
+            if restriction_type == "DRO" and matrix_type != "Nx12":
+                continue
             for trial_idx in tqdm(range(config.n_trials), desc="Trials", leave=False):
                 max_bound, max_loss_values, alpha_max = run_search(
                     A_dict=A_dict,
@@ -480,6 +519,7 @@ if __name__ == "__main__":
                     n_iters=config.n_optim_iters,
                     restriction_type=restriction_type,
                     dataset_size=dataset_size,
+                    rho=rho
                 )
 
                 min_bound, min_loss_values, alpha_min = run_search(
@@ -491,6 +531,7 @@ if __name__ == "__main__":
                     n_iters=config.n_optim_iters,
                     restriction_type=restriction_type,
                     dataset_size=dataset_size,
+                    rho=rho
                 )
                 plotting_dfs.append(
                     pd.DataFrame(
@@ -554,3 +595,7 @@ if __name__ == "__main__":
     )
     ax.set_title("Conditional Mean")
     fig.savefig(f"losses_{timestamp}")
+    plotting_df.to_csv("plotting_df.csv")
+
+    with open('dataset_metadata.pkl', 'wb') as outp:
+        pickle.dump(dataset, outp, pickle.HIGHEST_PROTOCOL)

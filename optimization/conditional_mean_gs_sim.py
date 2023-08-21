@@ -15,6 +15,8 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from folktables import ACSDataSource, ACSEmployment
 
+DATASET_SIZE = 100000 
+
 def empirical_propensity_score(X, A):
     """Computes the empirical propensity scores.
      
@@ -278,8 +280,8 @@ def run_search(num_constr, A_0, A_1,data_count_1, data_count_0,
         restrictions = [weights_features@w >= n_sample/dataset_size,
                         A_0@ w == b0, 
                         A_1@ w == b1,
-                        other_A_0@ w == other_b0] 
-                        #other_A_1@ w == other_b1]
+                        # other_A_0@ w == other_b0] 
+                        other_A_1@ w == other_b1]
         prob = cp.Problem(cp.Minimize(objective), restrictions[:num_constr + 1])
         prob.solve()
         
@@ -321,7 +323,7 @@ def run_search(num_constr, A_0, A_1,data_count_1, data_count_0,
 
 if __name__ == '__main__':
     
-    DATASET_SIZE = 100000 
+
     # Generates the data.
     X_raw, A_raw, y_raw, obs, y2_raw = simulate_multiple_outcomes(DATASET_SIZE)
     X, A, y, y2 = X_raw[obs], A_raw[obs], y_raw[obs], y2_raw[obs]
@@ -403,8 +405,8 @@ if __name__ == '__main__':
     ate = w_counts_1.sum()/size
     print(f"Conditional mean: {ate}, {emprical_conditonal_mean_1}")
 
-    for num_constr in range(3,4):
-        for index in range(10):
+    for num_constr in range(1,4):
+        for index in range(1):
 
             upper_bound = True
             max_bound, max_loss_values, alpha_max = run_search(num_constr, A0, A1, data_count_1, data_count_0, weights_features, upper_bound, gt_ate, prop_score_tensor)
@@ -415,8 +417,8 @@ if __name__ == '__main__':
             c_time = datetime.datetime.now()
             timestamp = str(c_time.timestamp())
             timestamp = "_".join(timestamp.split("."))
-            np.save(f"res/min_loss_c{num_constr}_{index}", min_loss_values)
-            np.save(f"res/max_loss_c{num_constr}_{index}", max_loss_values)
+            # np.save(f"res/min_loss_c{num_constr}_{index}", min_loss_values)
+            # np.save(f"res/max_loss_c{num_constr}_{index}", max_loss_values)
 
             print(f"min:{float(min_bound)} , gt:{gt_ate},  max:{float(max_bound)}")
             plt.plot(min_loss_values)
@@ -434,3 +436,4 @@ if __name__ == '__main__':
         # plt.axhline(y=empirical_biased_ipw, color='cyan', linestyle='dashed')
         # plt.axhline(y=emp_ate, color='olive', linestyle='dashed')
         # plt.legend(["min", "max", "Ground truth ate", "IPW", "Empirical a
+    plt.savefig(f"losses_{timestamp}")

@@ -90,11 +90,11 @@ if __name__ == '__main__':
     X, label, sex, group = get_folks_tables_data()
    
     dataset_size = X.shape[0]
-    obs = scipy.special.expit(X[:,0] - X[:,1] + X[:,2]) > np.random.uniform(size=dataset_size)
-    
+    obs = scipy.special.expit(X[:,0] - X[:,1] ) > np.random.uniform(size=dataset_size)
+    # + X[:,2]
     # Generates the data.
     X_sample, group_sample, y = X[obs], group[obs], label[obs]
-    sex_group = sex[obs]
+    sex_sample = sex[obs]
     data, levels = build_dataset(X, group) 
     skewed_data, levels = build_dataset(X_sample, group_sample)
     print(levels)
@@ -110,16 +110,16 @@ if __name__ == '__main__':
     for level in levels:
         number_strata *= len(level)
     
-    number_strata = 1
-    for level in levels:
-        number_strata *= len(level)
-    print(number_strata)
+    # number_strata = 1
+    # for level in levels:
+    #     number_strata *= len(level)
+    # print(number_strata)
 
     idx = 0
     idj = 0
     idm = 0
     idn = 0
-    weights_features = torch.zeros(number_strata, 5*4 + 2 + 1)
+    weights_features = torch.zeros(number_strata, 2*5*4 + 2 )
     starting_tuple = ('0_0', '1_0')
     starting_com_3 = '2_0'
     previous_comb_3 = starting_com_3
@@ -127,9 +127,43 @@ if __name__ == '__main__':
     previous_comb_2 = starting_com_2
     previous_tuple = starting_tuple
 
+    # for combination in traverse_combinations(levels):
+    #     current_tuple = (combination[1], combination[2])
+    #     current_comb_2 = combination[2]
+    #     current_comb_3 = combination[3]
+
+    #     if previous_tuple != current_tuple:
+    #         if current_tuple == starting_tuple:
+    #             idj = 0
+    #         else:
+    #             idj += 1
+    #     if previous_comb_3 != current_comb_3:
+    #         if current_comb_3 == starting_com_3:
+    #             idm = 0
+    #         else:
+    #             idm += 1
+    #     if previous_comb_2 != current_comb_2:
+    #         if current_comb_2 == starting_com_2:
+    #             idn = 0
+    #         else:
+    #             idn += 1
+        
+
+    #     weight = [0]*(5*4)
+    #     weight[idj] = 1
+
+    #     weight_2 = [0]*2
+    #     weight_2[idm] = 1
+        
+    #     weights_features[idx] = torch.tensor(weight + weight_2 + [1]).float()
+    #     idx += 1
+
+    #     previous_tuple = current_tuple
+    #     previous_comb_3 = current_comb_3
+    #     previous_comb_2 = current_comb_2
+
     for combination in traverse_combinations(levels):
-        current_tuple = (combination[1], combination[2])
-        current_comb_2 = combination[2]
+        current_tuple = (combination[0], combination[1], combination[2])
         current_comb_3 = combination[3]
 
         if previous_tuple != current_tuple:
@@ -143,54 +177,19 @@ if __name__ == '__main__':
                 idm = 0
             else:
                 idm += 1
-        if previous_comb_2 != current_comb_2:
-            if current_comb_2 == starting_com_2:
-                idn = 0
-            else:
-                idn += 1
-        
 
-        weight = [0]*(5*4)
+        weight = [0]*(2*5*4)
         weight[idj] = 1
 
-        weight_2 = [0]*2
-        weight_2[idm] = 1
+        weight_3 = [0]*2
+        weight_3[idm] = 1
         
-        weights_features[idx] = torch.tensor(weight + weight_2 + [1]).float()
+        weights_features[idx] = torch.tensor(weight + weight_3).float()
         idx += 1
 
         previous_tuple = current_tuple
         previous_comb_3 = current_comb_3
-        previous_comb_2 = current_comb_2
-
-    # for combination in traverse_combinations(levels):
-    #     current_tuple = (combination[0], combination[1], combination[2])
-    #     current_comb_3 = combination[3]
-
-    #     if previous_tuple != current_tuple:
-    #         if current_tuple == starting_tuple:
-    #             idj = 0
-    #         else:
-    #             idj += 1
-    #     # import pdb;pdb.set_trace()
-    #     if previous_comb_3 != current_comb_3:
-    #         if current_comb_3 == starting_com_3:
-    #             idm = 0
-    #         else:
-    #             idm += 1
-
-    #     weight = [0]*(2*5*4)
-    #     weight[idj] = 1
-
-    #     weight_3 = [0]*2
-    #     weight_3[idm] = 1
-        
-    #     weights_features[idx] = torch.tensor(weight + weight_3).float()
-    #     idx += 1
-
-    #     previous_tuple = current_tuple
-    #     previous_comb_3 = current_comb_3
-    print(weights_features.sum(axis=0))
+    # print(weights_features.sum(axis=0))
 
     print(number_strata)
     # weights_features = torch.eye(number_strata)
@@ -214,19 +213,13 @@ if __name__ == '__main__':
 
     data_count_0 = counts[0]
     data_count_1 = counts[1]
+
     A0, A1 = build_strata_counts_matrix(weights_features, counts, ["white", "non-white"])
-    
-    # gt_ate = compute_debias_ate_ipw()
-    # np.save("baselines", np.array([biased_empirical_mean, empirical_mean, ipw]))
-    # print("baselines:", [biased_empirical_mean, empirical_mean, ipw])
-    mean_race = compute_ate_conditional_mean(1 -group_sample, y)
-    mean_race_t = data_count_1[1].sum()/(data_count_1[1].sum() + data_count_0[1].sum()) 
-    print("test", mean_race, mean_race_t)
-    
+        
     # Observed
-    biased_empirical_mean = compute_ate_conditional_mean(1 - sex_group, y)
+    biased_empirical_mean = compute_ate_conditional_mean(1 - sex_sample, y)
     mean_race_t = data_count_1.select(-1,1).sum()/(data_count_1.select(-1,1).sum() + data_count_0.select(-1,1).sum()) 
-    print("test_2", biased_empirical_mean, mean_race_t)
+    print("test", biased_empirical_mean, mean_race_t)
     # Real
     empirical_mean = compute_ate_conditional_mean(1 - sex, label)
     print(empirical_mean, biased_empirical_mean)
