@@ -12,12 +12,20 @@ import torch
 import pickle
 from tqdm import tqdm
 
-import config
+import argparse
+import json
+from config import parse_config_dict
 from datasets import FolktablesLoader, SimulationLoader
 
 def traverse_combinations(list_of_lists):
     for combination in itertools.product(*list_of_lists):
         yield combination
+
+def read_json(config_filename):
+    # Load configuration from JSON file
+    with open(config_filename, 'r') as config_file:
+        config_dict = json.load(config_file)
+    return config_dict
 
 def get_feature_weights(
     matrix_type: str, dataset_type: str, levels: List[List[str]]
@@ -93,22 +101,36 @@ def get_feature_weights(
         elif matrix_type == "Nx8":
             idx = 0
             idj = 0
-            feature_weights = torch.zeros(number_strata, 5*4*2)
+            idm = 0
+            feature_weights = torch.zeros(number_strata, 5*4*2 + 2)
             starting_tuple = ('MIL_0', 'ANC_0', 'NATIVITY_0')
             previous_tuple = starting_tuple
+            starting_feature = 'white'
+            previous_feature = starting_feature
             for combination in traverse_combinations(levels):
                 current_tuple = (combination[1], combination[2], combination[3])
+                current_feature = combination[0]
                 if previous_tuple != current_tuple:
                     if current_tuple == starting_tuple:
                         idj = 0
                     else:
                         idj += 1
+                if previous_feature != current_feature:
+                    if current_feature == starting_feature:
+                        idm = 0
+                    else:
+                        idm += 1
+
                 weight = [0]*(5*4*2)
                 weight[idj] = 1
-                feature_weights[idx] = torch.tensor(weight).float()
+                weight_race = [0]*2
+                weight_race[idm] = 1 
+                feature_weights[idx] = torch.tensor(weight + weight_race).float()
                 idx += 1
                 previous_tuple = current_tuple
+                previous_feature = current_feature
             return feature_weights
+
         elif matrix_type == "Nx6":
             idx = 0
             idj = 0
@@ -399,6 +421,11 @@ def run_search(
 
 if __name__ == "__main__":
     os.environ["KMP_DUPLICATE_LIB_OK"] = "True"
+    parser = argparse.ArgumentParser(description="Run experiments with JSON configuration.")
+    parser.add_argument("config", help="Path to the JSON configuration file")
+    args = parser.parse_args()
+    config_dict = read_json(args.config)
+    config = parse_config_dict(config_dict)
 
     rng = np.random.default_rng(config.random_seed)
     if config.dataset_type == "simulation":

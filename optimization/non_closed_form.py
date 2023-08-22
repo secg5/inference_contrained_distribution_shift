@@ -71,10 +71,10 @@ def assign_weights(data, hash_map, weights_features):
         indexes = data_features.iloc[i,:] == 1
         columns_names = data_features.iloc[i,:][indexes].index
         # tuple_features = (columns_names[-1], columns_names[0], columns_names[1], columns_names[2])
-        tuple_features = (columns_names[-1], columns_names[0], columns_names[1])
+        # tuple_features = (columns_names[-1], columns_names[0], columns_names[1])
         # print(tuple_features)
         # import pdb; pdb.set_trace()
-        # tuple_features = (columns_names[-1], columns_names[0], columns_names[1], columns_names[2], columns_names[3], columns_names[4], columns_names[5], columns_names[6])
+        tuple_features = (columns_names[-1], columns_names[0], columns_names[1], columns_names[2], columns_names[3], columns_names[4], columns_names[5], columns_names[6])
         weight_index = hash_map[tuple_features]
         weight = weights_features[weight_index]
         weigths.append(weight)
@@ -243,40 +243,40 @@ if __name__ == '__main__':
     for level in levels_full:
         number_strata *= len(level)
     
-    # weights_features = torch.eye(number_strata)
-    # idx = 0
-    # hash_map = {}
-
-    # for combination in traverse_combinations(levels_full):
-    #     hash_map[combination] = idx
-    #     idx += 1
-    # print("weights_features shpae", weights_features.shape)
-    
+    weights_features = torch.eye(number_strata)
     idx = 0
-    idj = 0
-    weights_features = torch.zeros(number_strata, 2*5*4)
-    print(weights_features.shape)
-    starting_tuple = ("white", '0_0', '1_0')
-    # starting_tuple = ('0_0', '1_0')
-    previous_tuple = starting_tuple
-    flag = True
     hash_map = {}
 
     for combination in traverse_combinations(levels_full):
-        current_tuple = (combination[0], combination[1], combination[2])
-        if previous_tuple != current_tuple:
-            if current_tuple == starting_tuple:
-                idj = 0
-            else:
-                idj += 1
-        weight = [0]*(2*5*4)
-        weight[idj] = 1
-        weights_features[idx] = torch.tensor(weight).float()
-
-        hash_map[current_tuple] = idx
+        hash_map[combination] = idx
         idx += 1
-        previous_tuple = current_tuple
-    print(weights_features.sum(axis=0))
+    print("weights_features shpae", weights_features.shape)
+    
+    # idx = 0
+    # idj = 0
+    # weights_features = torch.zeros(number_strata, 2*5*4)
+    # print(weights_features.shape)
+    # starting_tuple = ("white", '0_0', '1_0')
+    # # starting_tuple = ('0_0', '1_0')
+    # previous_tuple = starting_tuple
+    # flag = True
+    # hash_map = {}
+
+    # for combination in traverse_combinations(levels_full):
+    #     current_tuple = (combination[0], combination[1], combination[2])
+    #     if previous_tuple != current_tuple:
+    #         if current_tuple == starting_tuple:
+    #             idj = 0
+    #         else:
+    #             idj += 1
+    #     weight = [0]*(2*5*4)
+    #     weight[idj] = 1
+    #     weights_features[idx] = torch.tensor(weight).float()
+
+    #     hash_map[current_tuple] = idx
+    #     idx += 1
+    #     previous_tuple = current_tuple
+    # print(weights_features.sum(axis=0))
 
     
     weights_array = assign_weights(skewed_data_full, hash_map, weights_features)
@@ -315,8 +315,8 @@ if __name__ == '__main__':
         c_time = datetime.datetime.now()
         timestamp = str(c_time.timestamp())
         timestamp = "_".join(timestamp.split("."))
-        np.save(f"non_close_results/min_loss_full_g{index}", min_loss_values)
-        np.save(f"non_close_results/max_loss_full_g{index}", max_loss_values)
+        np.save(f"non_close_results/min_loss_full_{index}", min_loss_values)
+        np.save(f"non_close_results/max_loss_full_{index}", max_loss_values)
 
         # print(f"min:{float(min_bound)} , gt:{ground_truth},  max:{float(max_bound)}")
         plt.plot(min_loss_values)
