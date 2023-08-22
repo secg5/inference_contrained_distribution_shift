@@ -9,6 +9,8 @@ import statsmodels.api as sm
 import numpy as np
 from itertools import accumulate
 import cvxpy as cp
+from cvxpylayers.torch import CvxpyLayer
+
 
 
 
@@ -18,17 +20,22 @@ class WeightedLogisticRegression(nn.Module):
     Basic classification model to use as a basis for an optimization problem.
     """
 
-    def __init__(self, num_features, num_labels, degrees_freedom):
+    def __init__(self, X, target ,weights_array):
         super(WeightedLogisticRegression, self).__init__()
-        self.linear = torch.nn.Linear(in_features=num_features, 
-                                      out_features=num_labels, bias=True)
-        self.sigmoid = nn.Sigmoid()
-        # weights = torch.rand(degrees_freedom, 1, requires_grad=False)
-        weights = torch.tensor([[1.], [1.]], requires_grad=False)
-        # Given that p(x,y) < w < 0.25 and p(x,y) = beta it is reasonable to start with w as 1.
-        self.weights = torch.nn.parameter.Parameter(weights, requires_grad=True)
+        num_features =  X.shape[1]
+        dataset_size = X.shape[0]
+        beta = cp.Variable((num_features, 1)) 
+        b = cp.Variable((1, 1))
+        
+        alpha = cp.Parameter((weights_array.shape[1], 1), nonneg=True)
+        weights = weights_array @ alpha
+        aux = cp.multiply(target, X @ beta + b) - cp.logistic(X @ beta + b)
+        log_likelihood = (1. / dataset_size) * (aux.T @ weights)
+        prob = cp.Problem(cp.Maximize(log_likelihood)) 
+        self.fit_logreg = CvxpyLayer(prob, parameters=[weights], variables=[beta,b])
+        
 
-    def forward(self, features):
+    def forward(self, alpha_weights):
         """Standard computations for produce a logistic regression."""
-        features = self.linear(features)
-        return self.sigmoid(features)
+        betas = self.fit_logreg(alpha_weights)
+        return betas
