@@ -1,0 +1,20 @@
+{
+    "random_seed": 1234,
+    "dataset_type": "simulation",
+    "correlation_coeff": 1,
+    "dataset_size": 100000,
+    "feature_names": [
+        "MIL",
+        "ANC",
+        "NATIVITY",
+        "DEAR",
+        "DEYE",
+        "DREM",
+        "SEX"
+    ],
+    "states": ["AL"],
+    "n_trials": 1,
+    "n_optim_iters": 3000,
+    "restriction_trials": ["count", "DRO"],
+    "matrix_types": ["Nx12", "Nx8", "Nx6"]
+}
