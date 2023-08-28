@@ -17,6 +17,9 @@ class Dataset:
     alternate_outcome: str
     empirical_conditional_mean: float
     true_conditional_mean: float
+    population_df_colinear: pd.DataFrame = None
+    sample_df_colinear: pd.DataFrame = None
+    levels_colinear: List[List[str]] = None
 
 
 class DatasetLoader(ABC):
@@ -157,6 +160,7 @@ class FolktablesLoader(DatasetLoader):
         survey_year: str = "2018",
         horizon: str = "1-Year",
         survey: str = "person",
+        size = None
     ) -> None:
         self.feature_names = feature_names
         self.states = states
@@ -164,6 +168,7 @@ class FolktablesLoader(DatasetLoader):
         self.survey_year = survey_year
         self.horizon = horizon
         self.survey = survey
+        self.size = size
 
     def _download_data(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         data_source = ACSDataSource(
@@ -185,9 +190,9 @@ class FolktablesLoader(DatasetLoader):
         X_selected = X[:, selected_idxs]
 
         obs = expit(
-            X_selected[:, 0] - X_selected[:, 1] + X_selected[:, 2]
-        ) > self.rng.uniform(size=X.shape[0])
-        return X_selected, A, y, obs
+            X_selected[:, 0] - X_selected[:, 1]) > self.rng.uniform(size=X.shape[0])
+        size = X.shape[0] if not self.size else self.size
+        return X_selected[:size], A[:size], y[:size], obs[:size]
 
     def _get_ate_conditional_mean(self, A: np.ndarray, y: np.ndarray) -> float:
         """Computes the ate using inverse propensity weighting.
@@ -204,7 +209,7 @@ class FolktablesLoader(DatasetLoader):
         return conditional_mean / A.sum()
 
     def _create_dataframe(
-        self, X: np.ndarray, A: np.ndarray, feature_names: List[str]
+        self, X: np.ndarray, A: np.ndarray, feature_names: List[str], full=True
     ) -> Tuple[pd.DataFrame, List[List[str]]]:
         data = pd.DataFrame()
         levels = []
@@ -215,10 +220,18 @@ class FolktablesLoader(DatasetLoader):
                 str(feature_names[column_idx]) + "_" + str(j)
                 for j in range(int(strata_number))
             ]
-            data[names] = 0
-            data[names] = features
-            levels.append(names)
-        data[["white", "non-white"]] = pd.get_dummies(A)
+            if full:
+                data[names] = 0
+                data[names] = features
+                levels.append(names)
+            else:
+                data[names[:-1]] = 0 
+                data[names[:-1]] = features[features.columns[:-1]]
+                levels.append(names[:-1])
+        if full:
+            data[["white", "non-white"]] = pd.get_dummies(A)
+        else:
+            data["white"] = pd.get_dummies(A)[0]
         return data, levels
 
     def load(self) -> Dataset:
@@ -234,17 +247,27 @@ class FolktablesLoader(DatasetLoader):
         )
         true_conditional_mean = self._get_ate_conditional_mean(1 - X[:, -1], y)
 
-        population_df, levels = self._create_dataframe(X, A, self.feature_names)
-        levels = [["white", "non-white"]] + levels
+        population_df, levels = self._create_dataframe(X, A, self.feature_names, full=False)
+        levels = [["white"]] + levels
         population_df["Creditability"] = y
 
-        sample_df, _ = self._create_dataframe(X_sample, A_sample, self.feature_names)
+        sample_df, _ = self._create_dataframe(X_sample, A_sample, self.feature_names, full=False)
         sample_df["Creditability"] = y_sample
+
+        population_df_colinear, levels_colinear = self._create_dataframe(X, A, self.feature_names, full=True)
+        levels_colinear = [["white", "non-white"]] + levels_colinear
+        population_df_colinear["Creditability"] = y
+
+        sample_df_colinear, _ = self._create_dataframe(X_sample, A_sample, self.feature_names, full=True)
+        sample_df_colinear["Creditability"] = y_sample
 
         dataset = Dataset(
             population_df=population_df,
             sample_df=sample_df,
+            population_df_colinear=population_df_colinear,
+            sample_df_colinear=sample_df_colinear,
             levels=levels,
+            levels_colinear=levels_colinear,
             target="Creditability",
             alternate_outcome="DEAR_1",
             empirical_conditional_mean=empirical_conditional_mean,

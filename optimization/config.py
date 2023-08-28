@@ -13,6 +13,7 @@ class Config:
     n_optim_iters: int
     restriction_trials: List
     matrix_types: List
+    statistic: str
 
 def parse_config_dict(config_dict):
     config = Config(**config_dict)
