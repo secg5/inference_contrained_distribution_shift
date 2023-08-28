@@ -1,0 +1,21 @@
+{
+    "random_seed": 1234,
+    "dataset_type": "folktables",
+    "correlation_coeff": 1,
+    "dataset_size": 25000,
+    "feature_names": [
+        "MIL",
+        "ANC",
+        "NATIVITY",
+        "DEAR",
+        "DEYE",
+        "DREM",
+        "SEX"
+    ],
+    "states": ["AL"],
+    "n_trials": 1,
+    "n_optim_iters": 15,
+    "restriction_trials": ["count", "count_minus"],
+    "matrix_types": ["Nx6"],
+    "statistic": "regression_logistic"
+}
