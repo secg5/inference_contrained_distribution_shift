@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import torch
+from torch.linalg import inv, lstsq
 import pickle
 from tqdm import tqdm
 
@@ -90,6 +91,7 @@ def get_feature_weights(
             raise ValueError(
                 f"Invalid feature matrix type {matrix_type} for simulated dataset."
             )
+
     elif dataset_type == "folktables":
         number_strata = 1
         for level in levels:
@@ -97,7 +99,14 @@ def get_feature_weights(
 
         if matrix_type == "Nx12":
             feature_weights = torch.eye(number_strata)
-            return feature_weights
+            idx = 0
+            hash_map = {}
+            # levels_full
+            for combination in traverse_combinations(levels):
+                hash_map[combination] = idx
+                idx += 1
+            return feature_weights, hash_map
+        
         elif matrix_type == "Nx8":
             idx = 0
             idj = 0
@@ -134,22 +143,24 @@ def get_feature_weights(
         elif matrix_type == "Nx6":
             idx = 0
             idj = 0
-            feature_weights = torch.zeros(number_strata, 5*4*2)
-            starting_tuple = ('MIL_0', 'ANC_0', 'NATIVITY_0')
+            feature_weights = torch.zeros(number_strata, 5*4)
+            starting_tuple = ('MIL_0', 'ANC_0')
             previous_tuple = starting_tuple
+            hash_map = {}
             for combination in traverse_combinations(levels):
-                current_tuple = (combination[1], combination[2], combination[3])
+                current_tuple = (combination[1], combination[2])
                 if previous_tuple != current_tuple:
                     if current_tuple == starting_tuple:
                         idj = 0
                     else:
                         idj += 1
-                weight = [0]*(5*4*2)
+                weight = [0]*(5*4)
                 weight[idj] = 1
                 feature_weights[idx] = torch.tensor(weight).float()
+                hash_map[current_tuple] = idx
                 idx += 1
                 previous_tuple = current_tuple
-            return feature_weights
+            return feature_weights, hash_map
         else:
             raise ValueError(
                 f"Invalid feature matrix type {matrix_type} for folktables dataset."
@@ -162,6 +173,23 @@ def traverse_level_combinations(levels: List[List[str]]) -> List[Tuple]:
     for combination in itertools.product(*levels):
         yield combination
 
+def create_features_tensor(data):
+    """_summary_
+
+    Args:
+        data (_type_): _description_
+        label (_type_): _description_
+
+    Returns:
+        _type_: _description_
+    """
+    features = data.drop(columns=["Creditability"], inplace=False)
+    features = features.to_numpy().astype(np.double)
+    features = np.concatenate([features, np.ones((features.shape[0],1))], axis =-1)
+    features_tensor = torch.tensor(features).float()
+    target = torch.tensor(data["Creditability"], dtype = torch.long).float()
+    target = torch.unsqueeze(target, -1)
+    return features_tensor, target
 
 def get_feature_strata(
     df: pd.DataFrame, levels: List[List[str]], target: str
@@ -314,6 +342,28 @@ def build_strata_counts_matrix(
 
 #     return y_0_ground_truth.numpy(), y_1_ground_truth.numpy()
 
+def assign_weights(data, hash_map, weights_features, matrix_type):
+    """Code that from the weihgts matrix assigns the corresponding weight to 
+    each feature according to the correct combination of feature strata.
+
+    Args:
+        features (_type_): _description_
+        weights (_type_): _description_
+    """
+
+    weigths = []
+    data_features = data[data.columns[:-1]]
+    for i  in range(data_features.shape[0]):
+        indexes = data_features.iloc[i,:] == 1
+        columns_names = data_features.iloc[i,:][indexes].index
+        if matrix_type == "Nx12":
+            tuple_features = (columns_names[-1], columns_names[0], columns_names[1], columns_names[2], columns_names[3], columns_names[4], columns_names[5], columns_names[6])
+        elif matrix_type == "Nx6":
+            tuple_features = (columns_names[0], columns_names[1])
+        weight_index = hash_map[tuple_features]
+        weight = weights_features[weight_index]
+        weigths.append(weight)
+    return torch.stack(weigths)
 
 def get_restrictions(
     restriction_type: str, A_dict, w, restriction_values, n_sample, 
@@ -352,12 +402,18 @@ def run_search(
     n_iters,
     restriction_type,
     dataset_size,
-    rho
+    rho,
+    statistic,
+    weights_array
 ):
     """Runs the search for the optimal weights."""
 
     data_count_0 = strata_estimands["count"][0]
     data_count_1 = strata_estimands["count"][1]
+
+    if statistic == "regression" or statistic == "logistic_regression":
+        features_tensor = strata_estimands["features_tensor"]
+        target = strata_estimands["target"]
 
     torch.autograd.set_detect_anomaly(True)
     alpha = torch.rand(feature_weights.shape[1], requires_grad=True)
@@ -390,27 +446,54 @@ def run_search(
         )
 
         prob = cp.Problem(cp.Minimize(objective), restrictions)
+       
         prob.solve()
 
         alpha.data = torch.tensor(w.value).float()
-        weights_y1 = (feature_weights @ alpha).reshape(*data_count_1.shape)
-        weights_y0 = (feature_weights @ alpha).reshape(*data_count_0.shape)
-        weighted_counts_1 = weights_y1 * data_count_1
-        weighted_counts_0 = weights_y0 * data_count_0
+        weights = weights_array @ alpha
+        
+        if statistic == "regression":
+            sq_weights = torch.sqrt(weights)
+            W = torch.eye(weights.shape[0])*sq_weights
+            
+         
+            coeff = lstsq(W@features_tensor, W@target,  driver = 'gelsd')[0][0]
+            objective = coeff[0]
 
-        w_counts_1 = weighted_counts_1.select(-1, 1)
-        w_counts_0 = weighted_counts_0.select(-1, 1)
+        elif statistic == "logistic_regression":
+            features_tensor = features_tensor.double()
+            weights = weights.unsqueeze(1)
+            # Here we find a local minima for the logistic regression
+            # before fitting the theta to have a faster convergence.
+            # The algorithm is taken from The elemets of statistical learning pg 121.
+            #TODO: review if W allows weights diff from the ones in pg 121 of the book.
+            lgit_loss = []
+            with torch.no_grad():
+                coeff = torch.zeros(features_tensor.shape[1], 1).double()
+                for _ in range(40):
+                    p = torch.sigmoid(features_tensor@coeff)
+                    Wsqrt = torch.sqrt(weights*p*(1-p))
+                    Winv =  (1/(weights*p*(1-p)))
+                    z = features_tensor@coeff + Winv*(target - p)
+                    coeff = lstsq(Wsqrt*features_tensor, Wsqrt*z , driver = 'gelsd')[0]
+                    loglik = (target*torch.log(p) + (1-target)*torch.log(1-p)).mean().item()
+                    lgit_loss.append(loglik)
 
-        size = w_counts_1.sum() + w_counts_0.sum()
-        conditional_mean = w_counts_1.sum() / size
+            p = torch.sigmoid(features_tensor@coeff)
+            Wsqrt = torch.sqrt(weights*p*(1-p))
+            Winv =  (1/(weights*p*(1-p)))
+            z = features_tensor@coeff + Winv*(target - p)
+            coeff = lstsq(Wsqrt*features_tensor, Wsqrt*z )[0]
+            objective = coeff[0][0]
+        else:
+            raise ValueError(f"Statistic type {statistic} not supported.")  
 
-        loss = -conditional_mean if upper_bound else conditional_mean
-        loss_values.append(conditional_mean.detach().numpy())
+        loss = -objective if upper_bound else objective
+        loss_values.append(objective.detach().numpy())
 
         optim.zero_grad()
         loss.backward()
         optim.step()
-
     if upper_bound:
         ret = max(loss_values)
     else:
@@ -435,66 +518,75 @@ if __name__ == "__main__":
             rng=rng,
         )
         dataset = data_loader.load()
-        treatment_level = dataset.levels[0]
+        treatment_level = dataset.levels_colinear[0]
         dataset_size = dataset.population_df.shape[0]
         sample_size = dataset.sample_df.shape[0]
     elif config.dataset_type == "folktables":
         data_loader = FolktablesLoader(
-            rng=rng, states=config.states, feature_names=config.feature_names
+            rng=rng, 
+            states=config.states, 
+            feature_names=config.feature_names,
+            size=config.dataset_size
         )
         dataset = data_loader.load()
-        treatment_level = dataset.levels[0]
+        treatment_level = dataset.levels_colinear[0]
         dataset_size = dataset.population_df.shape[0]
         sample_size = dataset.sample_df.shape[0]
 
     restriction_values = {
         "count": get_count_restrictions(
-            data=dataset.population_df,
+            data=dataset.population_df_colinear,
             target=dataset.target,
             treatment_level=treatment_level,
         ), 
         "count_minus": get_count_restrictions(
-            data=dataset.population_df,
+            data=dataset.population_df_colinear,
             target=dataset.target,
             treatment_level=treatment_level,
         ),
         "count_plus": get_count_restrictions(
-            data=dataset.population_df,
+            data=dataset.population_df_colinear,
             target=dataset.target,
             treatment_level=treatment_level,
         ) + get_count_restrictions(
-            data=dataset.population_df,
+            data=dataset.population_df_colinear,
             target=dataset.alternate_outcome,
             treatment_level=treatment_level,
         )
     }
 
     strata_dfs = get_feature_strata(
-        df=dataset.sample_df, levels=dataset.levels, target=dataset.target
+        df=dataset.sample_df_colinear, levels=dataset.levels_colinear, target=dataset.target
     )
     strata_dfs_alternate_outcome = get_feature_strata(
-        df=dataset.sample_df, 
-        levels=dataset.levels, 
+        df=dataset.sample_df_colinear, 
+        levels=dataset.levels_colinear, 
         target=dataset.alternate_outcome
     )
     strata_dfs_population = get_feature_strata(
-        df=dataset.population_df, 
-        levels=dataset.levels, 
+        df=dataset.population_df_colinear, 
+        levels=dataset.levels_colinear, 
         target=dataset.target
     )
 
     strata_estimands = {
         "count": get_strata_counts(
-            strata_dfs=strata_dfs, levels=dataset.levels
+            strata_dfs=strata_dfs, levels=dataset.levels_colinear
         ),
         "count_plus": get_strata_counts(
-            strata_dfs=strata_dfs_alternate_outcome, levels=dataset.levels
+            strata_dfs=strata_dfs_alternate_outcome, levels=dataset.levels_colinear
         )
     }
+    
+    statistic = config.statistic
+    assert statistic == "regression" or statistic == "logistic_regression", "Statistic must be set to regression or logistic_regression"
+    features_tensor, target = create_features_tensor(dataset.sample_df)
+    strata_estimands["features_tensor"] = features_tensor
+    strata_estimands["target"] = target
 
     strata_estimands_population = {
         "DRO": get_strata_counts(
-            strata_dfs=strata_dfs_population, levels=dataset.levels
+            strata_dfs=strata_dfs_population, levels=dataset.levels_colinear
         )
     }
 
@@ -509,10 +601,10 @@ if __name__ == "__main__":
     plotting_dfs = []
 
     for matrix_type in tqdm(config.matrix_types, desc="Matrix Type"):
-        feature_weights = get_feature_weights(
+        feature_weights, hash_map = get_feature_weights(
             matrix_type=matrix_type,
             dataset_type=config.dataset_type,
-            levels=dataset.levels,
+            levels=dataset.levels_colinear,
         )
         A_dict = {
             "count": build_strata_counts_matrix(
@@ -527,7 +619,12 @@ if __name__ == "__main__":
                 feature_weights, strata_estimands["count_plus"], treatment_level
             )
         }
-
+        
+        weights_array = assign_weights(dataset.sample_df_colinear, 
+                                       hash_map, 
+                                       feature_weights,
+                                       matrix_type)
+       
         for restriction_idx, restriction_type in tqdm(
             enumerate(config.restriction_trials),
             desc="Restrictions",
@@ -536,6 +633,7 @@ if __name__ == "__main__":
         ):
             if restriction_type == "DRO" and matrix_type != "Nx12":
                 continue
+            statistic = config.statistic
             for trial_idx in tqdm(range(config.n_trials), desc="Trials", leave=False):
                 max_bound, max_loss_values, alpha_max = run_search(
                     A_dict=A_dict,
@@ -546,7 +644,9 @@ if __name__ == "__main__":
                     n_iters=config.n_optim_iters,
                     restriction_type=restriction_type,
                     dataset_size=dataset_size,
-                    rho=rho
+                    rho=rho,
+                    statistic=statistic, 
+                    weights_array=weights_array
                 )
 
                 min_bound, min_loss_values, alpha_min = run_search(
@@ -558,9 +658,11 @@ if __name__ == "__main__":
                     n_iters=config.n_optim_iters,
                     restriction_type=restriction_type,
                     dataset_size=dataset_size,
-                    rho=rho
+                    rho=rho,
+                    statistic=statistic,
+                    weights_array=weights_array
                 )
-
+                # import pdb; pdb.set_trace()
                 plotting_dfs.append(
                     pd.DataFrame(
                         {
@@ -575,7 +677,7 @@ if __name__ == "__main__":
                         }
                     )
                 )
-
+   
     plotting_df = pd.concat(plotting_dfs).astype(
         {
             "max_loss": np.float64,
