@@ -1,5 +1,6 @@
-from typing import List, Tuple
-from dataclasses import dataclass,  asdict
+from dataclasses import dataclass
+from typing import List
+
 
 @dataclass
 class Config:
@@ -14,8 +15,9 @@ class Config:
     restriction_trials: List
     matrix_types: List
     statistic: str
+    cov_vars: List
+
 
 def parse_config_dict(config_dict):
     config = Config(**config_dict)
     return config
-      
