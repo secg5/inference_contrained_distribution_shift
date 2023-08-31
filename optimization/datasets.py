@@ -73,15 +73,15 @@ class SimulationLoader(DatasetLoader):
         # X_total = np.stack((X_1, X_2), axis=-1)
 
         X = np.random.choice(a=[0, 1, 2], size=self.dataset_size, p=[0.5, 0.3, 0.2])
-        X_2 =np.random.binomial(size=self.dataset_size, n=1, p=0.4)
+        X_2 = np.random.binomial(size=self.dataset_size, n=1, p=0.4)
 
         pi_A = expit(X_2 - X)
-        A = 1*(pi_A > np.random.uniform(size=self.dataset_size))
-        mu = expit(2*A - X + X_2)
-        y = 1*(mu > np.random.uniform(size=self.dataset_size))
-        
-        mu2 = expit((X + X_2)/2 - A)
-        y2 = 1*(mu2 > np.random.uniform(size=self.dataset_size))
+        A = 1 * (pi_A > np.random.uniform(size=self.dataset_size))
+        mu = expit(2 * A - X + X_2)
+        y = 1 * (mu > np.random.uniform(size=self.dataset_size))
+
+        mu2 = expit((X + X_2) / 2 - A)
+        y2 = 1 * (mu2 > np.random.uniform(size=self.dataset_size))
 
         obs = expit(X - X_2) > np.random.uniform(size=self.dataset_size)
         X_total = np.stack((X, X_2), axis=-1)
@@ -160,7 +160,8 @@ class FolktablesLoader(DatasetLoader):
         survey_year: str = "2018",
         horizon: str = "1-Year",
         survey: str = "person",
-        size = None
+        size=None,
+        buckets: dict = None,
     ) -> None:
         self.feature_names = feature_names
         self.states = states
@@ -169,6 +170,20 @@ class FolktablesLoader(DatasetLoader):
         self.horizon = horizon
         self.survey = survey
         self.size = size
+        if buckets:
+            self.buckets = buckets
+        else:
+            self.buckets = {
+                "SCHL": {
+                    (0, 0): 0,  # less-than-3
+                    (1, 1): 1,  # no-school
+                    (2, 3): 2,  # preschool
+                    (4, 8): 3,  # elementary
+                    (9, 16): 4,  # high-school
+                    (17, 21): 5,  # college
+                    (22, 24): 6,  # graduate
+                }
+            }
 
     def _download_data(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         data_source = ACSDataSource(
@@ -182,17 +197,25 @@ class FolktablesLoader(DatasetLoader):
         y = y.astype(int)
 
         # last feature is the group
-        selected_idxs = []
-        for idx, feature in enumerate(ACSEmployment.features):
-            if feature in self.feature_names:
-                selected_idxs.append(idx)
+        df = pd.DataFrame(X, columns=ACSEmployment.features)
+        df = self._group_features(df)
+        df = df[self.feature_names]
 
-        X_selected = X[:, selected_idxs]
+        X_selected = df.to_numpy()
 
-        obs = expit(
-            X_selected[:, 0] - X_selected[:, 1]) > self.rng.uniform(size=X.shape[0])
+        obs = expit(X_selected[:, 0] - X_selected[:, 1]) > self.rng.uniform(
+            size=X.shape[0]
+        )
         size = X.shape[0] if not self.size else self.size
         return X_selected[:size], A[:size], y[:size], obs[:size]
+
+    def _group_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        for feature, feature_buckets in self.buckets.items():
+            bins = [-1] + [edges[1] for edges in feature_buckets.keys()]
+            df[feature] = pd.cut(
+                df[feature], bins=bins, labels=list(feature_buckets.values())
+            )
+        return df
 
     def _get_ate_conditional_mean(self, A: np.ndarray, y: np.ndarray) -> float:
         """Computes the ate using inverse propensity weighting.
@@ -225,7 +248,7 @@ class FolktablesLoader(DatasetLoader):
                 data[names] = features
                 levels.append(names)
             else:
-                data[names[:-1]] = 0 
+                data[names[:-1]] = 0
                 data[names[:-1]] = features[features.columns[:-1]]
                 levels.append(names[:-1])
         if full:
@@ -247,18 +270,26 @@ class FolktablesLoader(DatasetLoader):
         )
         true_conditional_mean = self._get_ate_conditional_mean(1 - X[:, -1], y)
 
-        population_df, levels = self._create_dataframe(X, A, self.feature_names, full=False)
+        population_df, levels = self._create_dataframe(
+            X, A, self.feature_names, full=False
+        )
         levels = [["white"]] + levels
         population_df["Creditability"] = y
 
-        sample_df, _ = self._create_dataframe(X_sample, A_sample, self.feature_names, full=False)
+        sample_df, _ = self._create_dataframe(
+            X_sample, A_sample, self.feature_names, full=False
+        )
         sample_df["Creditability"] = y_sample
 
-        population_df_colinear, levels_colinear = self._create_dataframe(X, A, self.feature_names, full=True)
+        population_df_colinear, levels_colinear = self._create_dataframe(
+            X, A, self.feature_names, full=True
+        )
         levels_colinear = [["white", "non-white"]] + levels_colinear
         population_df_colinear["Creditability"] = y
 
-        sample_df_colinear, _ = self._create_dataframe(X_sample, A_sample, self.feature_names, full=True)
+        sample_df_colinear, _ = self._create_dataframe(
+            X_sample, A_sample, self.feature_names, full=True
+        )
         sample_df_colinear["Creditability"] = y_sample
 
         dataset = Dataset(
