@@ -1,0 +1,34 @@
+{
+    "random_seed": 1234,
+    "dataset_type": "folktables",
+    "correlation_coeff": 1,
+    "dataset_size": null,
+    "feature_names": [
+        "MIL",
+        "ANC",
+        "NATIVITY",
+        "DEAR",
+        "DEYE",
+        "DREM",
+        "SEX"
+    ],
+    "states": [
+        "AL"
+    ],
+    "n_trials": 1,
+    "n_optim_iters": 3000,
+    "restriction_trials": [
+        "cov_positive",
+        "count"
+    ],
+    "matrix_types": [
+        "Nx8",
+        "Nx6",
+        "Nx12"
+    ],
+    "statistic": "conditional_mean",
+    "cov_vars": [
+        "ANC_0",
+        "MIL_4"
+    ]
+}
