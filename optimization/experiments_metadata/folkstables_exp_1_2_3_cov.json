@@ -23,12 +23,21 @@
     ],
     "matrix_types": [
         "Nx8",
-        "Nx6",
-        "Nx12"
+        "Nx6"
     ],
     "statistic": "conditional_mean",
     "cov_vars": [
-        "ANC_0",
-        "MIL_4"
+        [
+            "MIL_4",
+            "SEX_1"
+        ],
+        [
+            "MIL_0",
+            "DREM_0"
+        ],
+        [
+            "MIL_2",
+            "SEX_0"
+        ]
     ]
 }

@@ -17,6 +17,7 @@ from datasets import FolktablesLoader, SimulationLoader
 from tqdm import tqdm
 
 
+# TODO: Remove traverse_combinations and replace for traverse_level_combinations
 def traverse_combinations(list_of_lists):
     for combination in itertools.product(*list_of_lists):
         yield combination
@@ -200,27 +201,30 @@ def get_strata_counts(
 def get_strata_covs(
     strata_dfs: Dict[Tuple, pd.DataFrame],
     levels: List[List[str]],
-    feature_means: Dict[str, float],
-) -> torch.Tensor:
-    feature_names = list(feature_means.keys())
-    means = list(feature_means.values())
-    strata_covs = list()
-    for strata_df in strata_dfs.values():
-        strata_cov = np.sum(
-            (strata_df[feature_names[0]] - means[0])
-            * (strata_df[feature_names[1]] - means[1])
-        )
-        n_samples = strata_df.shape[0]
-        if n_samples > 0:
-            strata_cov *= 1 / strata_df.shape[0]
-        else:
-            strata_cov = 0
-        if np.isnan(strata_cov):
-            strata_cov = 0
-        strata_covs.append(strata_cov)
+    all_feature_means: Dict[str, float],
+) -> List[torch.Tensor]:
+    all_strata_covs = []
+    for feature_means in all_feature_means:
+        feature_names = list(feature_means.keys())
+        means = list(feature_means.values())
+        strata_covs = list()
+        for strata_df in strata_dfs.values():
+            strata_cov = np.sum(
+                (strata_df[feature_names[0]] - means[0])
+                * (strata_df[feature_names[1]] - means[1])
+            )
+            n_samples = strata_df.shape[0]
+            if n_samples > 0:
+                strata_cov *= 1 / strata_df.shape[0]
+            else:
+                strata_cov = 0
+            if np.isnan(strata_cov):
+                strata_cov = 0
+            strata_covs.append(strata_cov)
 
-    output_shape = [2] + [len(level) for level in levels]
-    return torch.tensor(strata_covs).reshape(output_shape)
+        output_shape = [2] + [len(level) for level in levels]
+        all_strata_covs.append(torch.tensor(strata_covs).reshape(output_shape))
+    return all_strata_covs
 
 
 def get_count_restrictions(
@@ -259,21 +263,27 @@ def compute_f_divergence(p, q, type="chi2"):
 
 
 def get_cov_restrictions(
-    data: pd.DataFrame, target: str, treatment_level: List[str], cov_vars: List[str]
+    data: pd.DataFrame,
+    target: str,
+    treatment_level: List[str],
+    all_cov_vars: List[List[str]],
 ) -> Tuple[np.ndarray, np.ndarray]:
     y_00_val_1_df = data[(data[target] == 0) & (data[treatment_level[0]] == 1)]
     y_01_val_1_df = data[(data[target] == 1) & (data[treatment_level[0]] == 1)]
     y_00_val_2_df = data[(data[target] == 0) & (data[treatment_level[1]] == 1)]
     y_01_val_2_df = data[(data[target] == 1) & (data[treatment_level[1]] == 1)]
 
-    y_00_val_1 = y_00_val_1_df.cov().loc[*cov_vars]
-    y_01_val_1 = y_01_val_1_df.cov().loc[*cov_vars]
-    y_00_val_2 = y_00_val_2_df.cov().loc[*cov_vars]
-    y_01_val_2 = y_01_val_2_df.cov().loc[*cov_vars]
+    all_cov_restrictions = []
+    for cov_vars in all_cov_vars:
+        y_00_val_1 = y_00_val_1_df.cov().loc[*cov_vars]
+        y_01_val_1 = y_01_val_1_df.cov().loc[*cov_vars]
+        y_00_val_2 = y_00_val_2_df.cov().loc[*cov_vars]
+        y_01_val_2 = y_01_val_2_df.cov().loc[*cov_vars]
 
-    restriction_00 = np.array([y_00_val_1, y_00_val_2])
-    restriction_01 = np.array([y_01_val_1, y_01_val_2])
-    return restriction_00, restriction_01
+        restriction_00 = np.array([y_00_val_1, y_00_val_2])
+        restriction_01 = np.array([y_01_val_1, y_01_val_2])
+        all_cov_restrictions.append((restriction_00, restriction_01))
+    return all_cov_restrictions
 
 
 def build_strata_counts_matrix(
@@ -321,7 +331,7 @@ def build_strata_counts_matrix(
 
 
 def build_strata_covs_matrix(
-    feature_weights: torch.Tensor, covs: torch.Tensor, treatment_level: List[str]
+    feature_weights: torch.Tensor, all_covs: torch.Tensor, treatment_level: List[str]
 ):
     _, features = feature_weights.shape
     level_size = len(treatment_level)
@@ -329,20 +339,23 @@ def build_strata_covs_matrix(
     y_0_ground_truth = torch.zeros(level_size, features)
     y_1_ground_truth = torch.zeros(level_size, features)
 
-    data_covs_0 = covs[0]
-    data_covs_1 = covs[1]
+    all_matrices = []
+    for covs in all_covs:
+        data_covs_0 = covs[0]
+        data_covs_1 = covs[1]
 
-    for level in range(level_size):
-        t = data_covs_0[level].flatten().unsqueeze(1)
-        features = feature_weights[level * t.shape[0] : (level + 1) * t.shape[0]]
-        y_0_ground_truth[level] = (features * t).mean(dim=0)
+        for level in range(level_size):
+            t = data_covs_0[level].flatten().unsqueeze(1)
+            features = feature_weights[level * t.shape[0] : (level + 1) * t.shape[0]]
+            y_0_ground_truth[level] = (features * t).mean(dim=0)
 
-    for level in range(level_size):
-        t_ = data_covs_1[level].flatten().unsqueeze(1)
-        features_ = feature_weights[level * t.shape[0] : (level + 1) * t.shape[0]]
-        y_1_ground_truth[level] = (features_ * t_).mean(dim=0)
+        for level in range(level_size):
+            t_ = data_covs_1[level].flatten().unsqueeze(1)
+            features_ = feature_weights[level * t.shape[0] : (level + 1) * t.shape[0]]
+            y_1_ground_truth[level] = (features_ * t_).mean(dim=0)
+        all_matrices.append((y_0_ground_truth.numpy(), y_1_ground_truth.numpy()))
 
-    return y_0_ground_truth.numpy(), y_1_ground_truth.numpy()
+    return all_matrices
 
 
 def get_restrictions(
@@ -373,20 +386,17 @@ def get_restrictions(
             A_dict["count_plus"][3] @ w == restriction_values["count_plus"][3],
         ]
     elif restriction_type == "cov_positive":
-        restrictions += [
-            A_dict["cov"][0] @ w >= 0,
-            A_dict["cov"][1] @ w >= 0,
-        ]
+        for cov_pair in A_dict["cov"]:
+            restrictions += [cov_pair[0] @ w >= 0, cov_pair[1] @ w >= 0]
     elif restriction_type == "cov_negative":
-        restrictions += [
-            A_dict["cov"][0] @ w <= 0,
-            A_dict["cov"][1] @ w <= 0,
-        ]
+        for cov_pair in A_dict["cov"]:
+            restrictions += [cov_pair[0] @ w <= 0, cov_pair[1] @ w <= 0]
     elif restriction_type == "cov_strict":
-        restrictions += [
-            A_dict["cov"][0] @ w == restriction_values["cov"][0],
-            A_dict["cov"][1] @ w == restriction_values["cov"][1],
-        ]
+        for cov_pair, restriction_pair in zip(A_dict["cov"], restriction_values["cov"]):
+            restrictions += [
+                cov_pair[0] @ w >= restriction_pair[0],
+                cov_pair[1] @ w >= restriction_pair[1],
+            ]
     elif restriction_type == "DRO":
         chi_square_divergence = cp.multiply((ratio - 1) ** 2, q)
         restrictions += [0.5 * cp.sum(chi_square_divergence) <= rho]
@@ -529,14 +539,17 @@ if __name__ == "__main__":
             data=dataset.population_df_colinear,
             target=dataset.target,
             treatment_level=treatment_level,
-            cov_vars=config.cov_vars,
+            all_cov_vars=config.cov_vars,
         ),
     }
 
-    feature_means = {
-        config.cov_vars[0]: dataset.population_df_colinear[config.cov_vars[0]].mean(),
-        config.cov_vars[1]: dataset.population_df_colinear[config.cov_vars[1]].mean(),
-    }
+    all_feature_means = []
+    for cov_vars in config.cov_vars:
+        feature_means = {
+            cov_vars[0]: dataset.population_df_colinear[cov_vars[0]].mean(),
+            cov_vars[1]: dataset.population_df_colinear[cov_vars[1]].mean(),
+        }
+        all_feature_means.append(feature_means)
 
     print("Generating strata...")
     strata_dfs = get_feature_strata(
@@ -566,7 +579,7 @@ if __name__ == "__main__":
         "cov": get_strata_covs(
             strata_dfs=strata_dfs,
             levels=dataset.levels_colinear,
-            feature_means=feature_means,
+            all_feature_means=all_feature_means,
         ),
     }
 
