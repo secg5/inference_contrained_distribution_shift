@@ -17,12 +17,6 @@ from datasets import FolktablesLoader, SimulationLoader
 from tqdm import tqdm
 
 
-# TODO: Remove traverse_combinations and replace for traverse_level_combinations
-def traverse_combinations(list_of_lists):
-    for combination in itertools.product(*list_of_lists):
-        yield combination
-
-
 def read_json(config_filename):
     # Load configuration from JSON file
     with open(config_filename, "r") as config_file:
@@ -112,7 +106,7 @@ def get_feature_weights(
             previous_tuple = starting_tuple
             starting_feature = "white"
             previous_feature = starting_feature
-            for combination in traverse_combinations(levels):
+            for combination in traverse_level_combinations(levels):
                 current_tuple = (combination[1], combination[2], combination[3])
                 current_feature = combination[0]
                 if previous_tuple != current_tuple:
@@ -142,7 +136,7 @@ def get_feature_weights(
             feature_weights = torch.zeros(number_strata, degrees_of_freedom)
             starting_tuple = (levels[1][0], levels[2][0], levels[3][0])
             previous_tuple = starting_tuple
-            for combination in traverse_combinations(levels):
+            for combination in traverse_level_combinations(levels):
                 current_tuple = (combination[1], combination[2], combination[3])
                 if previous_tuple != current_tuple:
                     if current_tuple == starting_tuple:
