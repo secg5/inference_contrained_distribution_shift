@@ -24,6 +24,28 @@ def read_json(config_filename):
     return config_dict
 
 
+def get_cov_pairs(n_pairs, dataset, treatment_level, positive=True):
+    input_df = dataset.population_df_colinear.copy(())
+    all_cols = input_df.columns.to_list()
+    first_group_prefix = all_cols[0].split("_")[0]
+
+    first_group_cols = input_df.filter(
+        regex=f"^{first_group_prefix}_"
+    ).columns.to_list()
+    excluded_cols = first_group_cols + [dataset.target] + treatment_level
+    selected_cols = [col for col in all_cols if col not in excluded_cols]
+    covs = input_df.cov().loc[selected_cols, first_group_cols].unstack()
+
+    if positive:
+        covs = covs[covs >= 0]
+        cov_pairs = covs.sort_values(ascending=False).index.to_list()[:n_pairs]
+
+    else:
+        covs = covs[covs <= 0]
+        cov_pairs = covs.sort_values(ascending=True).index.to_list()[:n_pairs]
+    return cov_pairs
+
+
 def get_feature_weights(
     matrix_type: str, dataset_type: str, levels: List[List[str]]
 ) -> torch.Tensor:
