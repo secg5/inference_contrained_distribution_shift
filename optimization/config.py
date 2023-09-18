@@ -15,7 +15,7 @@ class Config:
     restriction_trials: List
     matrix_types: List
     statistic: str
-    cov_vars: List[List[str]]
+    n_cov_pairs: int
 
 
 def parse_config_dict(config_dict):

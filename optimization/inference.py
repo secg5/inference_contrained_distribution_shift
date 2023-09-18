@@ -24,7 +24,7 @@ def read_json(config_filename):
     return config_dict
 
 
-def get_cov_pairs(n_pairs, dataset, treatment_level, positive=True):
+def get_cov_pairs(n_pairs, dataset, treatment_level, mode):
     input_df = dataset.population_df_colinear.copy(())
     all_cols = input_df.columns.to_list()
     first_group_prefix = all_cols[0].split("_")[0]
@@ -36,13 +36,16 @@ def get_cov_pairs(n_pairs, dataset, treatment_level, positive=True):
     selected_cols = [col for col in all_cols if col not in excluded_cols]
     covs = input_df.cov().loc[selected_cols, first_group_cols].unstack()
 
-    if positive:
+    if mode == "positive":
         covs = covs[covs >= 0]
         cov_pairs = covs.sort_values(ascending=False).index.to_list()[:n_pairs]
 
-    else:
+    elif mode == "negative":
         covs = covs[covs <= 0]
         cov_pairs = covs.sort_values(ascending=True).index.to_list()[:n_pairs]
+
+    elif mode == "strict":
+        cov_pairs = covs.sort_values(ascending=False).index.to_list()[:n_pairs]
     return cov_pairs
 
 
@@ -363,12 +366,12 @@ def build_strata_covs_matrix(
         for level in range(level_size):
             t = data_covs_0[level].flatten().unsqueeze(1)
             features = feature_weights[level * t.shape[0] : (level + 1) * t.shape[0]]
-            y_0_ground_truth[level] = (features * t).mean(dim=0)
+            y_0_ground_truth[level] = (features * t).sum(dim=0)
 
         for level in range(level_size):
             t_ = data_covs_1[level].flatten().unsqueeze(1)
             features_ = feature_weights[level * t.shape[0] : (level + 1) * t.shape[0]]
-            y_1_ground_truth[level] = (features_ * t_).mean(dim=0)
+            y_1_ground_truth[level] = (features_ * t_).sum(dim=0)
         all_matrices.append((y_0_ground_truth.numpy(), y_1_ground_truth.numpy()))
 
     return all_matrices
@@ -529,6 +532,13 @@ if __name__ == "__main__":
     else:
         raise ValueError(f"Invalid dataset type {config.dataset_type}.")
 
+    all_cov_vars = get_cov_pairs(
+        n_pairs=config.n_cov_pairs,
+        dataset=dataset,
+        treatment_level=treatment_level,
+        mode="positive",
+    )
+
     print("Generating restrictions...")
     restriction_values = {
         "count": get_count_restrictions(
@@ -555,12 +565,12 @@ if __name__ == "__main__":
             data=dataset.population_df_colinear,
             target=dataset.target,
             treatment_level=treatment_level,
-            all_cov_vars=config.cov_vars,
+            all_cov_vars=all_cov_vars,
         ),
     }
 
     all_feature_means = []
-    for cov_vars in config.cov_vars:
+    for cov_vars in all_cov_vars:
         feature_means = {
             cov_vars[0]: dataset.population_df_colinear[cov_vars[0]].mean(),
             cov_vars[1]: dataset.population_df_colinear[cov_vars[1]].mean(),
@@ -683,6 +693,8 @@ if __name__ == "__main__":
                             "trial_idx": trial_idx,
                             "matrix_type": matrix_type,
                             "step": np.arange(len(max_loss_values)),
+                            "n_cov_pairs": config.n_cov_pairs,
+                            "interval_size": max_bound - min_bound,
                         }
                     )
                 )
@@ -697,6 +709,8 @@ if __name__ == "__main__":
             "min_bound": np.float64,
             "restriction_type": str,
             "matrix_type": str,
+            "n_cov_pairs": np.float64,
+            "interval_size": np.float64,
         }
     )
 
@@ -734,7 +748,7 @@ if __name__ == "__main__":
     )
     ax.set_title("Conditional Mean")
     fig.savefig(f"losses_{timestamp}")
-    plotting_df.to_csv("plotting_df.csv")
+    plotting_df.to_csv(f"plotting_df_{timestamp}.csv")
 
     with open("dataset_metadata.pkl", "wb") as outp:
         pickle.dump(dataset, outp, pickle.HIGHEST_PROTOCOL)
