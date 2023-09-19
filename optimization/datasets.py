@@ -121,6 +121,8 @@ class SimulationLoader(DatasetLoader):
             ["White", "Non White"],
         ]
 
+        levels_colinear = levels
+
         X_raw, A_raw, y_raw, obs, y_2_raw = self._simulate_dataset()
 
         X = X_raw[obs]
@@ -139,10 +141,16 @@ class SimulationLoader(DatasetLoader):
         population_df["Creditability"] = y_raw
         population_df["other_outcome"] = y_2_raw
 
+        population_df_colinear = population_df.copy()
+        sample_df_colinear = sample_df.copy()
+
         dataset = Dataset(
             population_df=population_df,
             sample_df=sample_df,
+            population_df_colinear=population_df_colinear,
+            sample_df_colinear=sample_df_colinear,
             levels=levels,
+            levels_colinear=levels_colinear,
             target="Creditability",
             alternate_outcome="other_outcome",
             empirical_conditional_mean=empirical_conditional_mean,
