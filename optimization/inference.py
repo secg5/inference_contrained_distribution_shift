@@ -473,6 +473,10 @@ def run_search(
         prob = cp.Problem(cp.Minimize(objective), restrictions)
         prob.solve()
 
+        if w.value is None:
+            print("\nOptimization failed.\n")
+            break
+
         alpha.data = torch.tensor(w.value).float()
         weights_y1 = (feature_weights @ alpha).reshape(*data_count_1.shape)
         weights_y0 = (feature_weights @ alpha).reshape(*data_count_0.shape)
@@ -492,10 +496,12 @@ def run_search(
         loss.backward()
         optim.step()
 
-    if upper_bound:
-        ret = max(loss_values)
-    else:
-        ret = min(loss_values)
+    ret = np.nan
+    if len(loss_values) > 0:
+        if upper_bound:
+            ret = max(loss_values)
+        else:
+            ret = min(loss_values)
 
     return ret, loss_values, alpha
 
@@ -532,12 +538,13 @@ if __name__ == "__main__":
     else:
         raise ValueError(f"Invalid dataset type {config.dataset_type}.")
 
-    all_cov_vars = get_cov_pairs(
-        n_pairs=config.n_cov_pairs,
-        dataset=dataset,
-        treatment_level=treatment_level,
-        mode="positive",
-    )
+    if config.n_cov_pairs:
+        all_cov_vars = get_cov_pairs(
+            n_pairs=config.n_cov_pairs,
+            dataset=dataset,
+            treatment_level=treatment_level,
+            mode="positive",
+        )
 
     print("Generating restrictions...")
     restriction_values = {
@@ -561,21 +568,23 @@ if __name__ == "__main__":
             target=dataset.alternate_outcome,
             treatment_level=treatment_level,
         ),
-        "cov": get_cov_restrictions(
+    }
+
+    if config.n_cov_pairs:
+        restriction_values["cov"] = get_cov_restrictions(
             data=dataset.population_df_colinear,
             target=dataset.target,
             treatment_level=treatment_level,
             all_cov_vars=all_cov_vars,
-        ),
-    }
+        )
 
-    all_feature_means = []
-    for cov_vars in all_cov_vars:
-        feature_means = {
-            cov_vars[0]: dataset.population_df_colinear[cov_vars[0]].mean(),
-            cov_vars[1]: dataset.population_df_colinear[cov_vars[1]].mean(),
-        }
-        all_feature_means.append(feature_means)
+        all_feature_means = []
+        for cov_vars in all_cov_vars:
+            feature_means = {
+                cov_vars[0]: dataset.population_df_colinear[cov_vars[0]].mean(),
+                cov_vars[1]: dataset.population_df_colinear[cov_vars[1]].mean(),
+            }
+            all_feature_means.append(feature_means)
 
     print("Generating strata...")
     strata_dfs = get_feature_strata(
@@ -602,12 +611,16 @@ if __name__ == "__main__":
         "count_plus": get_strata_counts(
             strata_dfs=strata_dfs_alternate_outcome, levels=dataset.levels_colinear
         ),
-        "cov": get_strata_covs(
-            strata_dfs=strata_dfs,
-            levels=dataset.levels_colinear,
-            all_feature_means=all_feature_means,
-        ),
     }
+
+    if config.n_cov_pairs:
+        strata_estimands["cov"] = (
+            get_strata_covs(
+                strata_dfs=strata_dfs,
+                levels=dataset.levels_colinear,
+                all_feature_means=all_feature_means,
+            ),
+        )
 
     strata_estimands_population = {
         "DRO": get_strata_counts(
@@ -621,8 +634,6 @@ if __name__ == "__main__":
         type="chi2",
     )
     print("rho: ", rho)
-    c_time = datetime.datetime.now()
-    timestamp = str(c_time.strftime("%b%d-%H%M"))
     plotting_dfs = []
 
     for matrix_type in tqdm(config.matrix_types, desc="Matrix Type"):
@@ -644,10 +655,12 @@ if __name__ == "__main__":
             + build_strata_counts_matrix(
                 feature_weights, strata_estimands["count_plus"], treatment_level
             ),
-            "cov": build_strata_covs_matrix(
-                feature_weights, strata_estimands["cov"], treatment_level
-            ),
         }
+
+        if config.n_cov_pairs:
+            A_dict["cov"] = build_strata_covs_matrix(
+                feature_weights, strata_estimands["cov"], treatment_level
+            )
 
         for restriction_idx, restriction_type in tqdm(
             enumerate(config.restriction_trials),
@@ -713,6 +726,9 @@ if __name__ == "__main__":
             "interval_size": np.float64,
         }
     )
+    c_time = datetime.datetime.now()
+    timestamp = str(c_time.strftime("%b%d-%H%M"))
+    os.mkdir(timestamp)
 
     fig, ax = plt.subplots(1, 1, figsize=(10, 5))
     ax.axhline(
@@ -747,8 +763,10 @@ if __name__ == "__main__":
         legend=False,
     )
     ax.set_title("Conditional Mean")
-    fig.savefig(f"losses_{timestamp}")
-    plotting_df.to_csv(f"plotting_df_{timestamp}.csv")
+    fig.savefig(f"./{timestamp}/losses")
+    plotting_df.to_csv(f"./{timestamp}/plotting_df.csv", index=False)
 
-    with open("dataset_metadata.pkl", "wb") as outp:
+    with open(f"./{timestamp}/dataset_metadata.pkl", "wb") as outp:
         pickle.dump(dataset, outp, pickle.HIGHEST_PROTOCOL)
+
+    print(f"Process finished! Results saved in folder: {timestamp}")

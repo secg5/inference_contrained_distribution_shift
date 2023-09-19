@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 
 @dataclass
@@ -15,7 +15,7 @@ class Config:
     restriction_trials: List
     matrix_types: List
     statistic: str
-    n_cov_pairs: int
+    n_cov_pairs: Optional[int] = None
 
 
 def parse_config_dict(config_dict):
