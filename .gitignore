@@ -133,3 +133,8 @@ dmypy.json
 /optimization/*.png
 /optimization/*.csv
 /optimization/*.pkl
+/experiment_artifacts/
+*.png
+
+# Mac OS
+.DS_Store
