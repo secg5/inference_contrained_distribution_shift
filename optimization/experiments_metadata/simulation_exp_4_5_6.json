@@ -12,10 +12,18 @@
         "DREM",
         "SEX"
     ],
-    "states": ["AL"],
-    "n_trials": 1,
+    "states": [
+        "AL"
+    ],
+    "n_trials": 10,
     "n_optim_iters": 3000,
-    "restriction_trials": ["count_minus", "count", "count_plus"],
-    "matrix_types": ["Nx12"],
+    "restriction_trials": [
+        "count_minus",
+        "count",
+        "count_plus"
+    ],
+    "matrix_types": [
+        "Nx6"
+    ],
     "statistic": "conditional_mean"
 }
