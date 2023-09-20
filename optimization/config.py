@@ -4,7 +4,7 @@ from typing import List, Optional
 
 @dataclass
 class Config:
-    random_seed: str
+    random_seeds: List[int]
     dataset_type: str
     correlation_coeff: int
     dataset_size: int
