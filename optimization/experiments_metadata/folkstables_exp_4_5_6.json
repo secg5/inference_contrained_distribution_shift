@@ -1,5 +1,11 @@
 {
-    "random_seed": 1234,
+    "random_seeds": [
+        0,
+        1,
+        2,
+        3,
+        4
+    ],
     "dataset_type": "folktables",
     "correlation_coeff": 1,
     "dataset_size": null,
@@ -15,7 +21,7 @@
     "states": [
         "AL"
     ],
-    "n_trials": 10,
+    "n_trials": 1,
     "n_optim_iters": 3000,
     "restriction_trials": [
         "count_minus",
