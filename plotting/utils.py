@@ -11,8 +11,6 @@ from datasets import *
 
 def generate_theta_plots_1_2_3(base_path: str, timestamp: str):
     plotting_df = pd.read_csv(os.path.join(base_path, timestamp, "plotting_df.csv"))
-    with open(os.path.join(base_path, timestamp, "dataset_metadata.pkl"), "rb") as fp:
-        dataset = pickle.load(fp)
 
     max_vals_1 = plotting_df[
         (plotting_df["step"] == 2999)
@@ -52,36 +50,150 @@ def generate_theta_plots_1_2_3(base_path: str, timestamp: str):
         (plotting_df["step"] == 2999) & (plotting_df["restriction_type"] == "DRO")
     ]["min_bound"]
 
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(figsize=(7, 6))
+
+    # Experiment 1
+    boxplot = ax.boxplot(
+        [max_vals_1, min_vals_1],
+        positions=[1, 1],
+        widths=0.2,
+        showfliers=False,
+        showmeans=False,
+        showbox=False,
+        showcaps=False,
+    )
+    plt.vlines(1, ymin=min(min_vals_1), ymax=max(max_vals_1))
+
+    # Fill between boxplot whiskers
+    ax.fill_between(
+        [0.9, 1.1],
+        [boxplot["whiskers"][0].get_ydata()[1]] * 2,
+        [boxplot["whiskers"][1].get_ydata()[1]] * 2,
+        color="C0",
+        alpha=0.5,
+        hatch="//",
+    )
+    ax.fill_between(
+        [0.9, 1.1],
+        [boxplot["whiskers"][2].get_ydata()[1]] * 2,
+        [boxplot["whiskers"][3].get_ydata()[1]] * 2,
+        color="C0",
+        alpha=0.5,
+        hatch="//",
+    )
+
+    # Experiment 2
+    boxplot = ax.boxplot(
+        [max_vals_2, min_vals_2],
+        positions=[2, 2],
+        widths=0.2,
+        showfliers=False,
+        showbox=False,
+        showcaps=False,
+        showmeans=False,
+    )
+    plt.vlines(2, ymin=min(min_vals_2), ymax=max(max_vals_2))
+
+    # Fill between boxplot whiskers
+    ax.fill_between(
+        [1.9, 2.1],
+        [boxplot["whiskers"][0].get_ydata()[1]] * 2,
+        [boxplot["whiskers"][1].get_ydata()[1]] * 2,
+        color="C0",
+        alpha=0.5,
+        hatch="//",
+    )
+    ax.fill_between(
+        [1.9, 2.1],
+        [boxplot["whiskers"][2].get_ydata()[1]] * 2,
+        [boxplot["whiskers"][3].get_ydata()[1]] * 2,
+        color="C0",
+        alpha=0.5,
+        hatch="//",
+    )
+
+    # Experiment 3
+    boxplot = ax.boxplot(
+        [max_vals_3, min_vals_3],
+        positions=[3, 3],
+        widths=0.2,
+        showfliers=False,
+        showbox=False,
+        showmeans=False,
+        showcaps=False,
+    )
+    plt.vlines(3, ymin=min(min_vals_3), ymax=max(max_vals_3))
+
+    # Fill between boxplot whiskers
+    ax.fill_between(
+        [2.9, 3.1],
+        [boxplot["whiskers"][0].get_ydata()[1]] * 2,
+        [boxplot["whiskers"][1].get_ydata()[1]] * 2,
+        color="C0",
+        alpha=0.5,
+        hatch="//",
+    )
+    ax.fill_between(
+        [2.9, 3.1],
+        [boxplot["whiskers"][2].get_ydata()[1]] * 2,
+        [boxplot["whiskers"][3].get_ydata()[1]] * 2,
+        color="C0",
+        alpha=0.5,
+        hatch="//",
+    )
+
+    # Experiment 4
+    boxplot = ax.boxplot(
+        [max_vals_4, min_vals_4],
+        positions=[4, 4],
+        widths=0.2,
+        showfliers=False,
+        showbox=False,
+        showcaps=False,
+    )
+    plt.vlines(4, ymin=min(min_vals_4), ymax=max(max_vals_4))
+
+    # Fill between boxplot whiskers
+    ax.fill_between(
+        [3.9, 4.1],
+        [boxplot["whiskers"][0].get_ydata()[1]] * 2,
+        [boxplot["whiskers"][1].get_ydata()[1]] * 2,
+        color="C0",
+        alpha=0.5,
+        hatch="//",
+    )
+    ax.fill_between(
+        [3.9, 4.1],
+        [boxplot["whiskers"][2].get_ydata()[1]] * 2,
+        [boxplot["whiskers"][3].get_ydata()[1]] * 2,
+        color="C0",
+        alpha=0.5,
+        hatch="//",
+    )
+
+    true_conditional_mean = plotting_df["true_conditional_mean"].mean()
+    min_empirical_conditional_mean = plotting_df["empirical_conditional_mean"].min()
+    max_empirical_conditional_mean = plotting_df["empirical_conditional_mean"].max()
 
     ax.axhline(
-        y=dataset.true_conditional_mean,
+        y=true_conditional_mean,
         color="blue",
         linestyle="dashed",
         label="True value",
-        linewidth=4,
-        alpha=0.5,
+        linewidth=2,
     )
-    ax.axhline(
-        y=dataset.empirical_conditional_mean,
+
+    # Get x axis limits
+    min_x, max_x = ax.get_xlim()
+    ax.fill_between(
+        [min_x, 2, max_x],
+        [min_empirical_conditional_mean] * 3,
+        [max_empirical_conditional_mean] * 3,
         color="olive",
-        linestyle=":",
+        alpha=0.2,
         label="Naive estimator",
-        linewidth=4,
-        alpha=0.5,
+        hatch="//",
     )
-
-    ax.boxplot([max_vals_1, min_vals_1], positions=[1, 1], widths=0.2, showfliers=False)
-    plt.vlines(1, ymin=min(min_vals_1), ymax=max(max_vals_1))
-
-    ax.boxplot([max_vals_2, min_vals_2], positions=[2, 2], widths=0.2, showfliers=False)
-    plt.vlines(2, ymin=min(min_vals_2), ymax=max(max_vals_2))
-
-    ax.boxplot([max_vals_3, min_vals_3], positions=[3, 3], widths=0.2, showfliers=False)
-    plt.vlines(3, ymin=min(min_vals_3), ymax=max(max_vals_3))
-
-    ax.boxplot([max_vals_4, min_vals_4], positions=[4, 4], widths=0.2, showfliers=False)
-    plt.vlines(4, ymin=min(min_vals_4), ymax=max(max_vals_4))
 
     ax.set_xticks([1, 2, 3, 4])
     ax.set_xticklabels(["Experiment 1", "Experiment 2", "Experiment 3", "DRO"])
@@ -90,20 +202,18 @@ def generate_theta_plots_1_2_3(base_path: str, timestamp: str):
     ax.tick_params(axis="both", which="minor", labelsize=16)
 
     ax.set_ylabel("Conditional Mean $\widehat{\mathbb{E}}[Y|A=1]$", fontsize=20)
-    ax.set_xlabel("Parametric form of  $\\theta(X)$", fontsize=20)
+    ax.set_xlabel("Parametric form of $\\theta(X)$", fontsize=20)
 
-    # # Add a legend
-    ax.legend(loc="lower right", fontsize=18)
+    # # Add a legend with long text wrapped across multiple lines.
+    ax.legend(loc="lower center", fontsize=18)
 
-    if not os.path.exists(timestamp):
-        os.mkdir(timestamp)
-    plt.savefig(os.path.join(timestamp, "theta_plots_1_2_3.png"), bbox_inches="tight")
+    # if not os.path.exists(timestamp):
+    #     os.mkdir(timestamp)
+    # plt.savefig(os.path.join(timestamp, "theta_plots_1_2_3.png"), bbox_inches="tight")
 
 
 def generate_theta_plots_4_5_6(base_path: str, timestamp: str):
     plotting_df = pd.read_csv(os.path.join(base_path, timestamp, "plotting_df.csv"))
-    with open(os.path.join(base_path, timestamp, "dataset_metadata.pkl"), "rb") as fp:
-        dataset = pickle.load(fp)
 
     max_vals_1 = plotting_df[
         (plotting_df["step"] == 2999)
@@ -129,46 +239,141 @@ def generate_theta_plots_4_5_6(base_path: str, timestamp: str):
         & (plotting_df["restriction_type"] == "count_plus")
     ]["min_bound"]
 
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(figsize=(7, 6))
 
+    # Experiment 4
+    boxplot = ax.boxplot(
+        [max_vals_1, min_vals_1],
+        positions=[1, 1],
+        widths=0.2,
+        showfliers=False,
+        showbox=False,
+        showmeans=False,
+        showcaps=False,
+    )
+    plt.vlines(1, ymin=min(min_vals_1), ymax=max(max_vals_1))
+
+    # Fill between boxplot whiskers
+    ax.fill_between(
+        [0.9, 1.1],
+        [boxplot["whiskers"][0].get_ydata()[1]] * 2,
+        [boxplot["whiskers"][1].get_ydata()[1]] * 2,
+        color="C0",
+        alpha=0.5,
+        hatch="//",
+    )
+    ax.fill_between(
+        [0.9, 1.1],
+        [boxplot["whiskers"][2].get_ydata()[1]] * 2,
+        [boxplot["whiskers"][3].get_ydata()[1]] * 2,
+        color="C0",
+        alpha=0.5,
+        hatch="//",
+    )
+
+    # Experiment 5
+    boxplot = ax.boxplot(
+        [max_vals_2, min_vals_2],
+        positions=[2, 2],
+        widths=0.2,
+        showfliers=False,
+        showbox=False,
+        showmeans=False,
+        showcaps=False,
+    )
+    plt.vlines(2, ymin=min(min_vals_2), ymax=max(max_vals_2))
+
+    # Fill between boxplot whiskers
+    ax.fill_between(
+        [1.9, 2.1],
+        [boxplot["whiskers"][0].get_ydata()[1]] * 2,
+        [boxplot["whiskers"][1].get_ydata()[1]] * 2,
+        color="C0",
+        alpha=0.5,
+        hatch="//",
+    )
+    ax.fill_between(
+        [1.9, 2.1],
+        [boxplot["whiskers"][2].get_ydata()[1]] * 2,
+        [boxplot["whiskers"][3].get_ydata()[1]] * 2,
+        color="C0",
+        alpha=0.5,
+        hatch="//",
+    )
+
+    # Experiment 6
+    boxplot = ax.boxplot(
+        [max_vals_3, min_vals_3],
+        positions=[3, 3],
+        widths=0.2,
+        showfliers=False,
+        showbox=False,
+        showmeans=False,
+        showcaps=False,
+    )
+    plt.vlines(3, ymin=min(min_vals_3), ymax=max(max_vals_3))
+
+    # Fill between boxplot whiskers
+    ax.fill_between(
+        [2.9, 3.1],
+        [boxplot["whiskers"][0].get_ydata()[1]] * 2,
+        [boxplot["whiskers"][1].get_ydata()[1]] * 2,
+        color="C0",
+        alpha=0.5,
+        hatch="//",
+    )
+    ax.fill_between(
+        [2.9, 3.1],
+        [boxplot["whiskers"][2].get_ydata()[1]] * 2,
+        [boxplot["whiskers"][3].get_ydata()[1]] * 2,
+        color="C0",
+        alpha=0.5,
+        hatch="//",
+    )
+
+    true_conditional_mean = plotting_df["true_conditional_mean"].mean()
+    min_empirical_conditional_mean = plotting_df["empirical_conditional_mean"].min()
+    max_empirical_conditional_mean = plotting_df["empirical_conditional_mean"].max()
     ax.axhline(
-        y=dataset.true_conditional_mean,
+        y=true_conditional_mean,
         color="blue",
         linestyle="dashed",
         label="True value",
-        linewidth=4,
-        alpha=0.5,
+        linewidth=2,
     )
-    ax.axhline(
-        y=dataset.empirical_conditional_mean,
+    # Get x axis limits
+    min_x, max_x = ax.get_xlim()
+    ax.fill_between(
+        [min_x, max_x],
+        [min_empirical_conditional_mean] * 2,
+        [max_empirical_conditional_mean] * 2,
         color="olive",
-        linestyle=":",
+        alpha=0.2,
         label="Naive estimator",
-        linewidth=4,
-        alpha=0.5,
+        hatch="//",
     )
 
-    ax.boxplot([max_vals_1, min_vals_1], positions=[1, 1], widths=0.2, showfliers=False)
-    plt.vlines(1, ymin=min(min_vals_1), ymax=max(max_vals_1))
-
-    ax.boxplot([max_vals_2, min_vals_2], positions=[2, 2], widths=0.2, showfliers=False)
-    plt.vlines(2, ymin=min(min_vals_2), ymax=max(max_vals_2))
-
-    ax.boxplot([max_vals_3, min_vals_3], positions=[3, 3], widths=0.2, showfliers=False)
-    plt.vlines(3, ymin=min(min_vals_3), ymax=max(max_vals_3))
+    # ax.axhline(
+    #     y=dataset.empirical_conditional_mean,
+    #     color="olive",
+    #     linestyle=":",
+    #     label="Naive estimator",
+    #     linewidth=4,
+    #     alpha=0.5,
+    # )
 
     ax.set_xticks([1, 2, 3])
-    ax.set_xticklabels(["Experiment 3", "Experiment 4", "Experiment 5"])
+    ax.set_xticklabels(["Experiment 4", "Experiment 5", "Experiment 6"])
 
     ax.tick_params(axis="both", which="major", labelsize=13)
     ax.tick_params(axis="both", which="minor", labelsize=16)
 
     ax.set_ylabel("Conditional Mean $\widehat{\mathbb{E}}[Y|A=1]$", fontsize=20)
-    ax.set_xlabel("Number of constraints in  $\\theta(X)$", fontsize=20)
+    ax.set_xlabel("Number of constraints in $\\theta(X)$", fontsize=20)
 
     # # Add a legend
     ax.legend(loc="lower right", fontsize=18)
 
-    if not os.path.exists(timestamp):
-        os.mkdir(timestamp)
-    plt.savefig(os.path.join(timestamp, "theta_plots_4_5_6.png"), bbox_inches="tight")
+    # if not os.path.exists(timestamp):
+    #     os.mkdir(timestamp)
+    # fig.savefig(os.path.join(timestamp, "theta_plots_4_5_6.png"), bbox_inches="tight")
