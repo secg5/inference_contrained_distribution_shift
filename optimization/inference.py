@@ -516,127 +516,130 @@ if __name__ == "__main__":
     config_dict = read_json(args.config)
     config = parse_config_dict(config_dict)
 
-    rng = np.random.default_rng(config.random_seed)
-    if config.dataset_type == "simulation":
-        data_loader = SimulationLoader(
-            dataset_size=config.dataset_size,
-            correlation_coeff=config.correlation_coeff,
-            rng=rng,
-        )
-        dataset = data_loader.load()
-        treatment_level = dataset.levels_colinear[0]
-        dataset_size = dataset.population_df_colinear.shape[0]
-        sample_size = dataset.sample_df_colinear.shape[0]
-    elif config.dataset_type == "folktables":
-        data_loader = FolktablesLoader(
-            rng=rng, states=config.states, feature_names=config.feature_names
-        )
-        dataset = data_loader.load()
-        treatment_level = dataset.levels_colinear[0]
-        dataset_size = dataset.population_df_colinear.shape[0]
-        sample_size = dataset.sample_df_colinear.shape[0]
-    else:
-        raise ValueError(f"Invalid dataset type {config.dataset_type}.")
-
-    if config.n_cov_pairs:
-        all_cov_vars = get_cov_pairs(
-            n_pairs=config.n_cov_pairs,
-            dataset=dataset,
-            treatment_level=treatment_level,
-            mode="positive",
-        )
-
-    print("Generating restrictions...")
-    restriction_values = {
-        "count": get_count_restrictions(
-            data=dataset.population_df_colinear,
-            target=dataset.target,
-            treatment_level=treatment_level,
-        ),
-        "count_minus": get_count_restrictions(
-            data=dataset.population_df_colinear,
-            target=dataset.target,
-            treatment_level=treatment_level,
-        ),
-        "count_plus": get_count_restrictions(
-            data=dataset.population_df_colinear,
-            target=dataset.target,
-            treatment_level=treatment_level,
-        )
-        + get_count_restrictions(
-            data=dataset.population_df_colinear,
-            target=dataset.alternate_outcome,
-            treatment_level=treatment_level,
-        ),
-    }
-
-    if config.n_cov_pairs:
-        restriction_values["cov"] = get_cov_restrictions(
-            data=dataset.population_df_colinear,
-            target=dataset.target,
-            treatment_level=treatment_level,
-            all_cov_vars=all_cov_vars,
-        )
-
-        all_feature_means = []
-        for cov_vars in all_cov_vars:
-            feature_means = {
-                cov_vars[0]: dataset.population_df_colinear[cov_vars[0]].mean(),
-                cov_vars[1]: dataset.population_df_colinear[cov_vars[1]].mean(),
-            }
-            all_feature_means.append(feature_means)
-
-    print("Generating strata...")
-    strata_dfs = get_feature_strata(
-        df=dataset.sample_df_colinear,
-        levels=dataset.levels_colinear,
-        target=dataset.target,
-    )
-    strata_dfs_alternate_outcome = get_feature_strata(
-        df=dataset.sample_df_colinear,
-        levels=dataset.levels_colinear,
-        target=dataset.alternate_outcome,
-    )
-    strata_dfs_population = get_feature_strata(
-        df=dataset.population_df_colinear,
-        levels=dataset.levels_colinear,
-        target=dataset.target,
-    )
-
-    print("Generating estimands...")
-    strata_estimands = {
-        "count": get_strata_counts(
-            strata_dfs=strata_dfs, levels=dataset.levels_colinear
-        ),
-        "count_plus": get_strata_counts(
-            strata_dfs=strata_dfs_alternate_outcome, levels=dataset.levels_colinear
-        ),
-    }
-
-    if config.n_cov_pairs:
-        strata_estimands["cov"] = (
-            get_strata_covs(
-                strata_dfs=strata_dfs,
-                levels=dataset.levels_colinear,
-                all_feature_means=all_feature_means,
-            ),
-        )
-
-    strata_estimands_population = {
-        "DRO": get_strata_counts(
-            strata_dfs=strata_dfs_population, levels=dataset.levels_colinear
-        )
-    }
-
-    rho = compute_f_divergence(
-        strata_estimands_population["DRO"] / dataset_size,
-        strata_estimands["count"] / sample_size,
-        type="chi2",
-    )
-    print("rho: ", rho)
     plotting_dfs = []
+    param_combinations = list(
+        itertools.product(
+            config.matrix_types, config.restriction_trials, config.random_seeds
+        )
+    )
+    for matrix_type, restriction_type, random_seed in tqdm(
+        param_combinations, desc="Param Combinations"
+    ):
+        rng = np.random.default_rng(random_seed)
+        if config.dataset_type == "simulation":
+            data_loader = SimulationLoader(
+                dataset_size=config.dataset_size,
+                correlation_coeff=config.correlation_coeff,
+                rng=rng,
+            )
+            dataset = data_loader.load()
+            treatment_level = dataset.levels_colinear[0]
+            dataset_size = dataset.population_df_colinear.shape[0]
+            sample_size = dataset.sample_df_colinear.shape[0]
+        elif config.dataset_type == "folktables":
+            data_loader = FolktablesLoader(
+                rng=rng, states=config.states, feature_names=config.feature_names
+            )
+            dataset = data_loader.load()
+            treatment_level = dataset.levels_colinear[0]
+            dataset_size = dataset.population_df_colinear.shape[0]
+            sample_size = dataset.sample_df_colinear.shape[0]
+        else:
+            raise ValueError(f"Invalid dataset type {config.dataset_type}.")
 
-    for matrix_type in tqdm(config.matrix_types, desc="Matrix Type"):
+        if config.n_cov_pairs:
+            all_cov_vars = get_cov_pairs(
+                n_pairs=config.n_cov_pairs,
+                dataset=dataset,
+                treatment_level=treatment_level,
+                mode="positive",
+            )
+
+        restriction_values = {
+            "count": get_count_restrictions(
+                data=dataset.population_df_colinear,
+                target=dataset.target,
+                treatment_level=treatment_level,
+            ),
+            "count_minus": get_count_restrictions(
+                data=dataset.population_df_colinear,
+                target=dataset.target,
+                treatment_level=treatment_level,
+            ),
+            "count_plus": get_count_restrictions(
+                data=dataset.population_df_colinear,
+                target=dataset.target,
+                treatment_level=treatment_level,
+            )
+            + get_count_restrictions(
+                data=dataset.population_df_colinear,
+                target=dataset.alternate_outcome,
+                treatment_level=treatment_level,
+            ),
+        }
+
+        if config.n_cov_pairs:
+            restriction_values["cov"] = get_cov_restrictions(
+                data=dataset.population_df_colinear,
+                target=dataset.target,
+                treatment_level=treatment_level,
+                all_cov_vars=all_cov_vars,
+            )
+
+            all_feature_means = []
+            for cov_vars in all_cov_vars:
+                feature_means = {
+                    cov_vars[0]: dataset.population_df_colinear[cov_vars[0]].mean(),
+                    cov_vars[1]: dataset.population_df_colinear[cov_vars[1]].mean(),
+                }
+                all_feature_means.append(feature_means)
+
+        strata_dfs = get_feature_strata(
+            df=dataset.sample_df_colinear,
+            levels=dataset.levels_colinear,
+            target=dataset.target,
+        )
+        strata_dfs_alternate_outcome = get_feature_strata(
+            df=dataset.sample_df_colinear,
+            levels=dataset.levels_colinear,
+            target=dataset.alternate_outcome,
+        )
+        strata_dfs_population = get_feature_strata(
+            df=dataset.population_df_colinear,
+            levels=dataset.levels_colinear,
+            target=dataset.target,
+        )
+
+        strata_estimands = {
+            "count": get_strata_counts(
+                strata_dfs=strata_dfs, levels=dataset.levels_colinear
+            ),
+            "count_plus": get_strata_counts(
+                strata_dfs=strata_dfs_alternate_outcome, levels=dataset.levels_colinear
+            ),
+        }
+
+        if config.n_cov_pairs:
+            strata_estimands["cov"] = (
+                get_strata_covs(
+                    strata_dfs=strata_dfs,
+                    levels=dataset.levels_colinear,
+                    all_feature_means=all_feature_means,
+                ),
+            )
+
+        strata_estimands_population = {
+            "DRO": get_strata_counts(
+                strata_dfs=strata_dfs_population, levels=dataset.levels_colinear
+            )
+        }
+
+        rho = compute_f_divergence(
+            strata_estimands_population["DRO"] / dataset_size,
+            strata_estimands["count"] / sample_size,
+            type="chi2",
+        )
+
         feature_weights = get_feature_weights(
             matrix_type=matrix_type,
             dataset_type=config.dataset_type,
@@ -662,55 +665,53 @@ if __name__ == "__main__":
                 feature_weights, strata_estimands["cov"], treatment_level
             )
 
-        for restriction_idx, restriction_type in tqdm(
-            enumerate(config.restriction_trials),
-            desc="Restrictions",
-            total=len(config.restriction_trials),
-            leave=False,
-        ):
-            if restriction_type == "DRO" and matrix_type != "Nx12":
-                continue
-            for trial_idx in tqdm(range(config.n_trials), desc="Trials", leave=False):
-                max_bound, max_loss_values, alpha_max = run_search(
-                    A_dict=A_dict,
-                    strata_estimands=strata_estimands,
-                    feature_weights=feature_weights,
-                    restriction_values=restriction_values,
-                    upper_bound=True,
-                    n_iters=config.n_optim_iters,
-                    restriction_type=restriction_type,
-                    dataset_size=dataset_size,
-                    rho=rho,
-                )
+        if restriction_type == "DRO" and matrix_type != "Nx12":
+            continue
+        for trial_idx in tqdm(range(config.n_trials), desc="Trials", leave=False):
+            max_bound, max_loss_values, alpha_max = run_search(
+                A_dict=A_dict,
+                strata_estimands=strata_estimands,
+                feature_weights=feature_weights,
+                restriction_values=restriction_values,
+                upper_bound=True,
+                n_iters=config.n_optim_iters,
+                restriction_type=restriction_type,
+                dataset_size=dataset_size,
+                rho=rho,
+            )
 
-                min_bound, min_loss_values, alpha_min = run_search(
-                    A_dict=A_dict,
-                    strata_estimands=strata_estimands,
-                    feature_weights=feature_weights,
-                    restriction_values=restriction_values,
-                    upper_bound=False,
-                    n_iters=config.n_optim_iters,
-                    restriction_type=restriction_type,
-                    dataset_size=dataset_size,
-                    rho=rho,
-                )
+            min_bound, min_loss_values, alpha_min = run_search(
+                A_dict=A_dict,
+                strata_estimands=strata_estimands,
+                feature_weights=feature_weights,
+                restriction_values=restriction_values,
+                upper_bound=False,
+                n_iters=config.n_optim_iters,
+                restriction_type=restriction_type,
+                dataset_size=dataset_size,
+                rho=rho,
+            )
 
-                plotting_dfs.append(
-                    pd.DataFrame(
-                        {
-                            "max_bound": max_bound,
-                            "min_bound": min_bound,
-                            "max_loss": max_loss_values,
-                            "min_loss": min_loss_values,
-                            "restriction_type": restriction_type,
-                            "trial_idx": trial_idx,
-                            "matrix_type": matrix_type,
-                            "step": np.arange(len(max_loss_values)),
-                            "n_cov_pairs": config.n_cov_pairs,
-                            "interval_size": max_bound - min_bound,
-                        }
-                    )
+            plotting_dfs.append(
+                pd.DataFrame(
+                    {
+                        "max_bound": max_bound,
+                        "min_bound": min_bound,
+                        "max_loss": max_loss_values,
+                        "min_loss": min_loss_values,
+                        "restriction_type": restriction_type,
+                        "trial_idx": trial_idx,
+                        "matrix_type": matrix_type,
+                        "step": np.arange(len(max_loss_values)),
+                        "n_cov_pairs": config.n_cov_pairs,
+                        "interval_size": max_bound - min_bound,
+                        "random_seed": random_seed,
+                        "true_conditional_mean": dataset.true_conditional_mean,
+                        "empirical_conditional_mean": dataset.empirical_conditional_mean,
+                        "rho": rho,
+                    }
                 )
+            )
 
     plotting_df = pd.concat(plotting_dfs).astype(
         {
@@ -724,6 +725,7 @@ if __name__ == "__main__":
             "matrix_type": str,
             "n_cov_pairs": np.float64,
             "interval_size": np.float64,
+            "random_seed": np.int64,
         }
     )
     c_time = datetime.datetime.now()
@@ -766,7 +768,7 @@ if __name__ == "__main__":
     fig.savefig(f"./{timestamp}/losses")
     plotting_df.to_csv(f"./{timestamp}/plotting_df.csv", index=False)
 
-    with open(f"./{timestamp}/dataset_metadata.pkl", "wb") as outp:
-        pickle.dump(dataset, outp, pickle.HIGHEST_PROTOCOL)
+    with open(f"./{timestamp}/config.json", "w") as outp:
+        json.dump(config_dict, outp, indent=4)
 
     print(f"Process finished! Results saved in folder: {timestamp}")
