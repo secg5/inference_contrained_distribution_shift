@@ -1,6 +1,9 @@
+import argparse
 import datetime
 import itertools
+import json
 import os
+import pickle
 from typing import Dict, List, Tuple
 
 import cvxpy as cp
@@ -9,24 +12,23 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import torch
-from torch.linalg import inv, lstsq
-import pickle
-from tqdm import tqdm
-
-import argparse
-import json
 from config import parse_config_dict
 from datasets import FolktablesLoader, SimulationLoader
+from torch.linalg import lstsq
+from tqdm import tqdm
+
 
 def traverse_combinations(list_of_lists):
     for combination in itertools.product(*list_of_lists):
         yield combination
 
+
 def read_json(config_filename):
     # Load configuration from JSON file
-    with open(config_filename, 'r') as config_file:
+    with open(config_filename, "r") as config_file:
         config_dict = json.load(config_file)
     return config_dict
+
 
 def get_feature_weights(
     matrix_type: str, dataset_type: str, levels: List[List[str]]
@@ -43,7 +45,7 @@ def get_feature_weights(
                 features = [0]*(2*3*2)
                 features[idx] = 1
                 weights_features[idx] = torch.tensor(features).float()
-                idx += 1 
+                idx += 1
     --------------------------------------------
     weights_features = torch.zeros(12, 6)
     idx = 0
@@ -54,7 +56,7 @@ def get_feature_weights(
                 features = [0]*(3*2)
                 features[idm] = 1
                 weights_features[idx] = torch.tensor(features).float()
-                idx += 1 
+                idx += 1
                 idm += 1
     --------------------------------------------
     weights_features = torch.zeros(12, 8)
@@ -69,7 +71,7 @@ def get_feature_weights(
                 features[idm] = 1
                 sex_features[idj] = 1
                 weights_features[idx] = torch.tensor(features + sex_features).float()
-                idx += 1 
+                idx += 1
                 idm += 1
         idj += 1
     """
@@ -106,15 +108,16 @@ def get_feature_weights(
                 hash_map[combination] = idx
                 idx += 1
             return feature_weights, hash_map
-        
+
         elif matrix_type == "Nx8":
+            degrees_of_freedom = len(levels[1]) * len(levels[2]) * len(levels[3])
             idx = 0
             idj = 0
             idm = 0
-            feature_weights = torch.zeros(number_strata, 5*4*2 + 2)
-            starting_tuple = ('MIL_0', 'ANC_0', 'NATIVITY_0')
+            feature_weights = torch.zeros(number_strata, degrees_of_freedom + 2)
+            starting_tuple = (levels[1][0], levels[2][0], levels[3][0])
             previous_tuple = starting_tuple
-            starting_feature = 'white'
+            starting_feature = "white"
             previous_feature = starting_feature
             for combination in traverse_combinations(levels):
                 current_tuple = (combination[1], combination[2], combination[3])
@@ -130,10 +133,10 @@ def get_feature_weights(
                     else:
                         idm += 1
 
-                weight = [0]*(5*4*2)
+                weight = [0] * degrees_of_freedom
                 weight[idj] = 1
-                weight_race = [0]*2
-                weight_race[idm] = 1 
+                weight_race = [0] * 2
+                weight_race[idm] = 1
                 feature_weights[idx] = torch.tensor(weight + weight_race).float()
                 idx += 1
                 previous_tuple = current_tuple
@@ -141,10 +144,11 @@ def get_feature_weights(
             return feature_weights
 
         elif matrix_type == "Nx6":
+            degrees_of_freedom = len(levels[1]) * len(levels[2])
             idx = 0
             idj = 0
-            feature_weights = torch.zeros(number_strata, 5*4)
-            starting_tuple = ('MIL_0', 'ANC_0')
+            feature_weights = torch.zeros(number_strata, degrees_of_freedom)
+            starting_tuple = (levels[1][0], levels[2][0])
             previous_tuple = starting_tuple
             hash_map = {}
             for combination in traverse_combinations(levels):
@@ -154,7 +158,7 @@ def get_feature_weights(
                         idj = 0
                     else:
                         idj += 1
-                weight = [0]*(5*4)
+                weight = [0] * degrees_of_freedom
                 weight[idj] = 1
                 feature_weights[idx] = torch.tensor(weight).float()
                 hash_map[current_tuple] = idx
@@ -173,6 +177,7 @@ def traverse_level_combinations(levels: List[List[str]]) -> List[Tuple]:
     for combination in itertools.product(*levels):
         yield combination
 
+
 def create_features_tensor(data):
     """_summary_
 
@@ -185,11 +190,12 @@ def create_features_tensor(data):
     """
     features = data.drop(columns=["Creditability"], inplace=False)
     features = features.to_numpy().astype(np.double)
-    features = np.concatenate([features, np.ones((features.shape[0],1))], axis =-1)
+    features = np.concatenate([features, np.ones((features.shape[0], 1))], axis=-1)
     features_tensor = torch.tensor(features).float()
-    target = torch.tensor(data["Creditability"], dtype = torch.long).float()
+    target = torch.tensor(data["Creditability"], dtype=torch.long).float()
     target = torch.unsqueeze(target, -1)
     return features_tensor, target
+
 
 def get_feature_strata(
     df: pd.DataFrame, levels: List[List[str]], target: str
@@ -221,6 +227,32 @@ def get_strata_counts(
     return torch.tensor(strata_counts).reshape(output_shape)
 
 
+def get_strata_covs(
+    strata_dfs: Dict[Tuple, pd.DataFrame],
+    levels: List[List[str]],
+    feature_means: Dict[str, float],
+) -> torch.Tensor:
+    feature_names = list(feature_means.keys())
+    means = list(feature_means.values())
+    strata_covs = list()
+    for strata_df in strata_dfs.values():
+        strata_cov = np.sum(
+            (strata_df[feature_names[0]] - means[0])
+            * (strata_df[feature_names[1]] - means[1])
+        )
+        n_samples = strata_df.shape[0]
+        if n_samples > 0:
+            strata_cov *= 1 / strata_df.shape[0]
+        else:
+            strata_cov = 0
+        if np.isnan(strata_cov):
+            strata_cov = 0
+        strata_covs.append(strata_cov)
+
+    output_shape = [2] + [len(level) for level in levels]
+    return torch.tensor(strata_covs).reshape(output_shape)
+
+
 def get_count_restrictions(
     data: pd.DataFrame, target: str, treatment_level: List[str]
 ) -> Tuple[np.ndarray, np.ndarray]:
@@ -235,13 +267,13 @@ def get_count_restrictions(
 
     return restriction_00, restriction_01
 
+
 def compute_f_divergence(p, q, type="chi2"):
     if type == "chi2":
         # return 0.5 * torch.sum((p-q)**2/(p+q+1e-8))
-        return 0.5 * torch.sum((p-q)**2/(q+1e-8))
+        return 0.5 * torch.sum((p - q) ** 2 / (q + 1e-8))
     else:
         raise ValueError(f"Invalid divergence type {type}.")
-
 
     # # Creates groundtruth values to generate linear restrictions *for other outcome*.
     # other_y00_female = sum((data["other_outcome"] == 0) & (data["female"] == 1))
@@ -256,22 +288,22 @@ def compute_f_divergence(p, q, type="chi2"):
     # other_A0, other_A1 = build_strata_counts_matrix(weights_features, counts2, ["female", "male"])
 
 
-# def get_cov_restrictions(
-#     data: pd.DataFrame, target: str, treatment_level: List[str], cov_vars: List[str]
-# ) -> Tuple[np.ndarray, np.ndarray]:
-#     y_00_val_1_df = data[(data[target] == 0) & (data[treatment_level[0]] == 1)]
-#     y_01_val_1_df = data[(data[target] == 1) & (data[treatment_level[0]] == 1)]
-#     y_00_val_2_df = data[(data[target] == 0) & (data[treatment_level[1]] == 1)]
-#     y_01_val_2_df = data[(data[target] == 1) & (data[treatment_level[1]] == 1)]
+def get_cov_restrictions(
+    data: pd.DataFrame, target: str, treatment_level: List[str], cov_vars: List[str]
+) -> Tuple[np.ndarray, np.ndarray]:
+    y_00_val_1_df = data[(data[target] == 0) & (data[treatment_level[0]] == 1)]
+    y_01_val_1_df = data[(data[target] == 1) & (data[treatment_level[0]] == 1)]
+    y_00_val_2_df = data[(data[target] == 0) & (data[treatment_level[1]] == 1)]
+    y_01_val_2_df = data[(data[target] == 1) & (data[treatment_level[1]] == 1)]
 
-#     y_00_val_1 = y_00_val_1_df.cov().loc[*cov_vars]
-#     y_01_val_1 = y_01_val_1_df.cov().loc[*cov_vars]
-#     y_00_val_2 = y_00_val_2_df.cov().loc[*cov_vars]
-#     y_01_val_2 = y_01_val_2_df.cov().loc[*cov_vars]
+    y_00_val_1 = y_00_val_1_df.cov().loc[*cov_vars]
+    y_01_val_1 = y_01_val_1_df.cov().loc[*cov_vars]
+    y_00_val_2 = y_00_val_2_df.cov().loc[*cov_vars]
+    y_01_val_2 = y_01_val_2_df.cov().loc[*cov_vars]
 
-#     restriction_00 = np.array([y_00_val_1, y_00_val_2])
-#     restriction_01 = np.array([y_01_val_1, y_01_val_2])
-#     return restriction_00, restriction_01
+    restriction_00 = np.array([y_00_val_1, y_00_val_2])
+    restriction_01 = np.array([y_01_val_1, y_01_val_2])
+    return restriction_00, restriction_01
 
 
 def build_strata_counts_matrix(
@@ -318,32 +350,33 @@ def build_strata_counts_matrix(
     return y_0_ground_truth.numpy(), y_1_ground_truth.numpy()
 
 
-# def build_strata_covs_matrix(
-#     feature_weights: torch.Tensor, covs: torch.Tensor, treatment_level: List[str]
-# ):
-#     _, features = feature_weights.shape
-#     level_size = len(treatment_level)
+def build_strata_covs_matrix(
+    feature_weights: torch.Tensor, covs: torch.Tensor, treatment_level: List[str]
+):
+    _, features = feature_weights.shape
+    level_size = len(treatment_level)
 
-#     y_0_ground_truth = torch.zeros(level_size, features)
-#     y_1_ground_truth = torch.zeros(level_size, features)
+    y_0_ground_truth = torch.zeros(level_size, features)
+    y_1_ground_truth = torch.zeros(level_size, features)
 
-#     data_covs_0 = covs[0]
-#     data_covs_1 = covs[1]
+    data_covs_0 = covs[0]
+    data_covs_1 = covs[1]
 
-#     for level in range(level_size):
-#         t = data_covs_0[level].flatten().unsqueeze(1)
-#         features = feature_weights[level * t.shape[0] : (level + 1) * t.shape[0]]
-#         y_0_ground_truth[level] = (features * t).mean(dim=0)
+    for level in range(level_size):
+        t = data_covs_0[level].flatten().unsqueeze(1)
+        features = feature_weights[level * t.shape[0] : (level + 1) * t.shape[0]]
+        y_0_ground_truth[level] = (features * t).mean(dim=0)
 
-#     for level in range(level_size):
-#         t_ = data_covs_1[level].flatten().unsqueeze(1)
-#         features_ = feature_weights[level * t.shape[0] : (level + 1) * t.shape[0]]
-#         y_1_ground_truth[level] = (features_ * t_).mean(dim=0)
+    for level in range(level_size):
+        t_ = data_covs_1[level].flatten().unsqueeze(1)
+        features_ = feature_weights[level * t.shape[0] : (level + 1) * t.shape[0]]
+        y_1_ground_truth[level] = (features_ * t_).mean(dim=0)
 
-#     return y_0_ground_truth.numpy(), y_1_ground_truth.numpy()
+    return y_0_ground_truth.numpy(), y_1_ground_truth.numpy()
+
 
 def assign_weights(data, hash_map, weights_features, matrix_type):
-    """Code that from the weihgts matrix assigns the corresponding weight to 
+    """Code that from the weihgts matrix assigns the corresponding weight to
     each feature according to the correct combination of feature strata.
 
     Args:
@@ -353,11 +386,20 @@ def assign_weights(data, hash_map, weights_features, matrix_type):
 
     weigths = []
     data_features = data[data.columns[:-1]]
-    for i  in range(data_features.shape[0]):
-        indexes = data_features.iloc[i,:] == 1
-        columns_names = data_features.iloc[i,:][indexes].index
+    for i in range(data_features.shape[0]):
+        indexes = data_features.iloc[i, :] == 1
+        columns_names = data_features.iloc[i, :][indexes].index
         if matrix_type == "Nx12":
-            tuple_features = (columns_names[-1], columns_names[0], columns_names[1], columns_names[2], columns_names[3], columns_names[4], columns_names[5], columns_names[6])
+            tuple_features = (
+                columns_names[-1],
+                columns_names[0],
+                columns_names[1],
+                columns_names[2],
+                columns_names[3],
+                columns_names[4],
+                columns_names[5],
+                columns_names[6],
+            )
         elif matrix_type == "Nx6":
             tuple_features = (columns_names[0], columns_names[1])
         weight_index = hash_map[tuple_features]
@@ -365,9 +407,17 @@ def assign_weights(data, hash_map, weights_features, matrix_type):
         weigths.append(weight)
     return torch.stack(weigths)
 
+
 def get_restrictions(
-    restriction_type: str, A_dict, w, restriction_values, n_sample, 
-    dataset_size, rho, ratio, q
+    restriction_type: str,
+    A_dict,
+    w,
+    restriction_values,
+    n_sample,
+    dataset_size,
+    rho,
+    ratio,
+    q,
 ):
     restrictions = [feature_weights @ w >= n_sample / dataset_size]
     if restriction_type == "count":
@@ -385,9 +435,24 @@ def get_restrictions(
             A_dict["count_plus"][1] @ w == restriction_values["count_plus"][1],
             A_dict["count_plus"][3] @ w == restriction_values["count_plus"][3],
         ]
+    elif restriction_type == "cov_positive":
+        restrictions += [
+            A_dict["cov"][0] @ w >= 0,
+            A_dict["cov"][1] @ w >= 0,
+        ]
+    elif restriction_type == "cov_negative":
+        restrictions += [
+            A_dict["cov"][0] @ w <= 0,
+            A_dict["cov"][1] @ w <= 0,
+        ]
+    elif restriction_type == "cov_strict":
+        restrictions += [
+            A_dict["cov"][0] @ w == restriction_values["cov"][0],
+            A_dict["cov"][1] @ w == restriction_values["cov"][1],
+        ]
     elif restriction_type == "DRO":
-       chi_square_divergence = cp.multiply((ratio - 1)**2, q)
-       restrictions += [ .5 * cp.sum(chi_square_divergence) <= rho]
+        chi_square_divergence = cp.multiply((ratio - 1) ** 2, q)
+        restrictions += [0.5 * cp.sum(chi_square_divergence) <= rho]
     else:
         raise ValueError(f"Restriction type {restriction_type} not supported.")
     return restrictions
@@ -404,7 +469,7 @@ def run_search(
     dataset_size,
     rho,
     statistic,
-    weights_array
+    weights_array,
 ):
     """Runs the search for the optimal weights."""
 
@@ -442,22 +507,20 @@ def run_search(
             dataset_size=dataset_size,
             rho=rho,
             ratio=ratio,
-            q=q
+            q=q,
         )
 
         prob = cp.Problem(cp.Minimize(objective), restrictions)
-       
         prob.solve()
 
         alpha.data = torch.tensor(w.value).float()
         weights = weights_array @ alpha
-        
+
         if statistic == "regression":
             sq_weights = torch.sqrt(weights)
-            W = torch.eye(weights.shape[0])*sq_weights
-            
-         
-            coeff = lstsq(W@features_tensor, W@target,  driver = 'gelsd')[0][0]
+            W = torch.eye(weights.shape[0]) * sq_weights
+
+            coeff = lstsq(W @ features_tensor, W @ target, driver="gelsd")[0][0]
             objective = coeff[0]
 
         elif statistic == "logistic_regression":
@@ -466,27 +529,31 @@ def run_search(
             # Here we find a local minima for the logistic regression
             # before fitting the theta to have a faster convergence.
             # The algorithm is taken from The elemets of statistical learning pg 121.
-            #TODO: review if W allows weights diff from the ones in pg 121 of the book.
+            # TODO: review if W allows weights diff from the ones in pg 121 of the book.
             lgit_loss = []
             with torch.no_grad():
                 coeff = torch.zeros(features_tensor.shape[1], 1).double()
                 for _ in range(40):
-                    p = torch.sigmoid(features_tensor@coeff)
-                    Wsqrt = torch.sqrt(weights*p*(1-p))
-                    Winv =  (1/(weights*p*(1-p)))
-                    z = features_tensor@coeff + Winv*(target - p)
-                    coeff = lstsq(Wsqrt*features_tensor, Wsqrt*z , driver = 'gelsd')[0]
-                    loglik = (target*torch.log(p) + (1-target)*torch.log(1-p)).mean().item()
+                    p = torch.sigmoid(features_tensor @ coeff)
+                    Wsqrt = torch.sqrt(weights * p * (1 - p))
+                    Winv = 1 / (weights * p * (1 - p))
+                    z = features_tensor @ coeff + Winv * (target - p)
+                    coeff = lstsq(Wsqrt * features_tensor, Wsqrt * z, driver="gelsd")[0]
+                    loglik = (
+                        (target * torch.log(p) + (1 - target) * torch.log(1 - p))
+                        .mean()
+                        .item()
+                    )
                     lgit_loss.append(loglik)
 
-            p = torch.sigmoid(features_tensor@coeff)
-            Wsqrt = torch.sqrt(weights*p*(1-p))
-            Winv =  (1/(weights*p*(1-p)))
-            z = features_tensor@coeff + Winv*(target - p)
-            coeff = lstsq(Wsqrt*features_tensor, Wsqrt*z )[0]
+            p = torch.sigmoid(features_tensor @ coeff)
+            Wsqrt = torch.sqrt(weights * p * (1 - p))
+            Winv = 1 / (weights * p * (1 - p))
+            z = features_tensor @ coeff + Winv * (target - p)
+            coeff = lstsq(Wsqrt * features_tensor, Wsqrt * z)[0]
             objective = coeff[0][0]
         else:
-            raise ValueError(f"Statistic type {statistic} not supported.")  
+            raise ValueError(f"Statistic type {statistic} not supported.")
 
         loss = -objective if upper_bound else objective
         loss_values.append(objective.detach().numpy())
@@ -504,7 +571,9 @@ def run_search(
 
 if __name__ == "__main__":
     os.environ["KMP_DUPLICATE_LIB_OK"] = "True"
-    parser = argparse.ArgumentParser(description="Run experiments with JSON configuration.")
+    parser = argparse.ArgumentParser(
+        description="Run experiments with JSON configuration."
+    )
     parser.add_argument("config", help="Path to the JSON configuration file")
     args = parser.parse_args()
     config_dict = read_json(args.config)
@@ -523,10 +592,10 @@ if __name__ == "__main__":
         sample_size = dataset.sample_df.shape[0]
     elif config.dataset_type == "folktables":
         data_loader = FolktablesLoader(
-            rng=rng, 
-            states=config.states, 
+            rng=rng,
+            states=config.states,
             feature_names=config.feature_names,
-            size=config.dataset_size
+            size=config.dataset_size,
         )
         dataset = data_loader.load()
         treatment_level = dataset.levels_colinear[0]
@@ -538,7 +607,7 @@ if __name__ == "__main__":
             data=dataset.population_df_colinear,
             target=dataset.target,
             treatment_level=treatment_level,
-        ), 
+        ),
         "count_minus": get_count_restrictions(
             data=dataset.population_df_colinear,
             target=dataset.target,
@@ -548,25 +617,39 @@ if __name__ == "__main__":
             data=dataset.population_df_colinear,
             target=dataset.target,
             treatment_level=treatment_level,
-        ) + get_count_restrictions(
+        )
+        + get_count_restrictions(
             data=dataset.population_df_colinear,
             target=dataset.alternate_outcome,
             treatment_level=treatment_level,
-        )
+        ),
+        "cov": get_cov_restrictions(
+            data=dataset.population_df_colinear,
+            target=dataset.target,
+            treatment_level=treatment_level,
+            cov_vars=config.cov_vars,
+        ),
+    }
+
+    feature_means = {
+        config.cov_vars[0]: dataset.population_df_colinear[config.cov_vars[0]].mean(),
+        config.cov_vars[1]: dataset.population_df_colinear[config.cov_vars[1]].mean(),
     }
 
     strata_dfs = get_feature_strata(
-        df=dataset.sample_df_colinear, levels=dataset.levels_colinear, target=dataset.target
+        df=dataset.sample_df_colinear,
+        levels=dataset.levels_colinear,
+        target=dataset.target,
     )
     strata_dfs_alternate_outcome = get_feature_strata(
-        df=dataset.sample_df_colinear, 
-        levels=dataset.levels_colinear, 
-        target=dataset.alternate_outcome
+        df=dataset.sample_df_colinear,
+        levels=dataset.levels_colinear,
+        target=dataset.alternate_outcome,
     )
     strata_dfs_population = get_feature_strata(
-        df=dataset.population_df_colinear, 
-        levels=dataset.levels_colinear, 
-        target=dataset.target
+        df=dataset.population_df_colinear,
+        levels=dataset.levels_colinear,
+        target=dataset.target,
     )
 
     strata_estimands = {
@@ -575,11 +658,20 @@ if __name__ == "__main__":
         ),
         "count_plus": get_strata_counts(
             strata_dfs=strata_dfs_alternate_outcome, levels=dataset.levels_colinear
-        )
+        ),
+        "cov": get_strata_covs(
+            strata_dfs=strata_dfs,
+            levels=dataset.levels_colinear,
+            feature_means=feature_means,
+        ),
     }
-    
+
     statistic = config.statistic
-    assert statistic == "regression" or statistic == "logistic_regression", "Statistic must be set to regression or logistic_regression"
+    if statistic not in ["regression", "logistic_regression"]:
+        raise ValueError(
+            f"Invalid statistic {statistic}. Must be regression or logistic_regression."
+        )
+
     features_tensor, target = create_features_tensor(dataset.sample_df)
     strata_estimands["features_tensor"] = features_tensor
     strata_estimands["target"] = target
@@ -591,10 +683,10 @@ if __name__ == "__main__":
     }
 
     rho = compute_f_divergence(
-                            strata_estimands_population["DRO"]/dataset_size,
-                            strata_estimands["count"]/sample_size,
-                            type="chi2"
-                            )
+        strata_estimands_population["DRO"] / dataset_size,
+        strata_estimands["count"] / sample_size,
+        type="chi2",
+    )
     print("rho: ", rho)
     c_time = datetime.datetime.now()
     timestamp = str(c_time.strftime("%b%d-%H%M"))
@@ -615,16 +707,19 @@ if __name__ == "__main__":
             ),
             "count_plus": build_strata_counts_matrix(
                 feature_weights, strata_estimands["count"], treatment_level
-            ) + build_strata_counts_matrix(
-                feature_weights, strata_estimands["count_plus"], treatment_level
             )
+            + build_strata_counts_matrix(
+                feature_weights, strata_estimands["count_plus"], treatment_level
+            ),
+            "cov": build_strata_covs_matrix(
+                feature_weights, strata_estimands["cov"], treatment_level
+            ),
         }
-        
-        weights_array = assign_weights(dataset.sample_df_colinear, 
-                                       hash_map, 
-                                       feature_weights,
-                                       matrix_type)
-       
+
+        weights_array = assign_weights(
+            dataset.sample_df_colinear, hash_map, feature_weights, matrix_type
+        )
+
         for restriction_idx, restriction_type in tqdm(
             enumerate(config.restriction_trials),
             desc="Restrictions",
@@ -645,8 +740,8 @@ if __name__ == "__main__":
                     restriction_type=restriction_type,
                     dataset_size=dataset_size,
                     rho=rho,
-                    statistic=statistic, 
-                    weights_array=weights_array
+                    statistic=statistic,
+                    weights_array=weights_array,
                 )
 
                 min_bound, min_loss_values, alpha_min = run_search(
@@ -660,7 +755,7 @@ if __name__ == "__main__":
                     dataset_size=dataset_size,
                     rho=rho,
                     statistic=statistic,
-                    weights_array=weights_array
+                    weights_array=weights_array,
                 )
                 # import pdb; pdb.set_trace()
                 plotting_dfs.append(
@@ -677,7 +772,7 @@ if __name__ == "__main__":
                         }
                     )
                 )
-   
+
     plotting_df = pd.concat(plotting_dfs).astype(
         {
             "max_loss": np.float64,
@@ -727,5 +822,5 @@ if __name__ == "__main__":
     fig.savefig(f"losses_{timestamp}")
     plotting_df.to_csv("plotting_df.csv")
 
-    with open('dataset_metadata.pkl', 'wb') as outp:
+    with open("dataset_metadata.pkl", "wb") as outp:
         pickle.dump(dataset, outp, pickle.HIGHEST_PROTOCOL)

@@ -1,21 +1,29 @@
 {
-    "random_seed": 1234,
-    "dataset_type": "folkstables",
+    "random_seeds": [
+        0
+    ],
+    "dataset_type": "folktables",
     "correlation_coeff": 1,
     "dataset_size": null,
     "feature_names": [
         "MIL",
         "ANC",
         "NATIVITY",
-        "DEAR",
-        "DEYE",
-        "DREM",
+        "DIS",
         "SEX"
     ],
-    "states": ["AL"],
+    "states": [
+        "AL"
+    ],
     "n_trials": 1,
     "n_optim_iters": 3000,
-    "restriction_trials": ["count"],
-    "matrix_types": ["Nx12", "Nx8", "Nx6"],
+    "restriction_trials": [
+        "count"
+    ],
+    "matrix_types": [
+        "Nx12",
+        "Nx8",
+        "Nx6"
+    ],
     "statistic": "conditional_mean"
 }

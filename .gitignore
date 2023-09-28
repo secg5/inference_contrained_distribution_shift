@@ -127,3 +127,15 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Run artifacts
+/optimization/data
+/optimization/*.png
+/optimization/*.csv
+/optimization/*.pkl
+/experiment_artifacts/
+*.png
+
+# Mac OS and VSCode files
+.DS_Store
+.vscode

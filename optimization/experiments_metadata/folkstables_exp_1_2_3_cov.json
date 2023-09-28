@@ -18,12 +18,12 @@
     "n_trials": 1,
     "n_optim_iters": 3000,
     "restriction_trials": [
-        "count_minus",
-        "count",
-        "count_plus"
+        "cov_positive"
     ],
     "matrix_types": [
+        "Nx8",
         "Nx6"
     ],
-    "statistic": "conditional_mean"
+    "statistic": "conditional_mean",
+    "n_cov_pairs": 2
 }
