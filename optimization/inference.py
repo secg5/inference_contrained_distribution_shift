@@ -616,7 +616,7 @@ if __name__ == "__main__":
                 n_pairs=config.n_cov_pairs,
                 dataset=dataset,
                 treatment_level=treatment_level,
-                mode="positive",
+                mode=restriction_type.split("_")[-1],
             )
 
         restriction_values = {
