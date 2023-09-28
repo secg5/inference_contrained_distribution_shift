@@ -1,5 +1,7 @@
 {
-    "random_seed": 1234,
+    "random_seeds": [
+        0
+    ],
     "dataset_type": "folktables",
     "correlation_coeff": 1,
     "dataset_size": null,
@@ -7,9 +9,7 @@
         "MIL",
         "ANC",
         "NATIVITY",
-        "DEAR",
-        "DEYE",
-        "DREM",
+        "DIS",
         "SEX"
     ],
     "states": [
@@ -18,26 +18,12 @@
     "n_trials": 1,
     "n_optim_iters": 3000,
     "restriction_trials": [
-        "cov_positive",
-        "count"
+        "cov_positive"
     ],
     "matrix_types": [
         "Nx8",
         "Nx6"
     ],
     "statistic": "conditional_mean",
-    "cov_vars": [
-        [
-            "MIL_4",
-            "SEX_1"
-        ],
-        [
-            "MIL_0",
-            "DREM_0"
-        ],
-        [
-            "MIL_2",
-            "SEX_0"
-        ]
-    ]
+    "n_cov_pairs": 2
 }

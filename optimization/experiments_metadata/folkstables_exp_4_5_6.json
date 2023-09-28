@@ -1,10 +1,6 @@
 {
     "random_seeds": [
-        0,
-        1,
-        2,
-        3,
-        4
+        0
     ],
     "dataset_type": "folktables",
     "correlation_coeff": 1,
@@ -13,9 +9,7 @@
         "MIL",
         "ANC",
         "NATIVITY",
-        "DEAR",
-        "DEYE",
-        "DREM",
+        "DIS",
         "SEX"
     ],
     "states": [
