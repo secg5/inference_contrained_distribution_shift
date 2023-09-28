@@ -136,5 +136,6 @@ dmypy.json
 /experiment_artifacts/
 *.png
 
-# Mac OS
+# Mac OS and VSCode files
 .DS_Store
+.vscode
