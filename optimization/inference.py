@@ -578,7 +578,8 @@ if __name__ == "__main__":
     plotting_dfs = []
     c_time = datetime.datetime.now()
     timestamp = str(c_time.strftime("%b%d-%H%M"))
-    os.mkdir(timestamp)
+    if not os.path.exists(os.path.join("..", "experiment_artifacts", timestamp)):
+        os.makedirs(os.path.join("..", "experiment_artifacts", timestamp))
 
     param_combinations = list(
         itertools.product(
@@ -749,7 +750,14 @@ if __name__ == "__main__":
             ax.set_ylabel("Rho")
             ax.set_xlabel("Iteration")
             ax.legend()
-            fig.savefig(f"./{timestamp}/rho_{random_seed}_{matrix_type}")
+            fig.savefig(
+                os.path.join(
+                    "..",
+                    "experiment_artifacts",
+                    timestamp,
+                    f"rho_{random_seed}_{matrix_type}",
+                )
+            )
         elif restriction_type == "DRO":
             rho = compute_f_divergence(
                 strata_estimands_population["DRO"] / dataset_size,
@@ -799,7 +807,7 @@ if __name__ == "__main__":
                         "interval_size": max_bound - min_bound,
                         "random_seed": random_seed,
                         "true_conditional_mean": dataset.true_conditional_mean,
-                        "empirical_conditional_mean": dataset.empirical_conditional_mean,
+                        "empirical_conditional_mean": dataset.empirical_conditional_mean,  # noqa: E501
                         "rho": rho,
                     }
                 )
@@ -854,10 +862,16 @@ if __name__ == "__main__":
         legend=False,
     )
     ax.set_title("Conditional Mean")
-    fig.savefig(f"./{timestamp}/losses")
-    plotting_df.to_csv(f"./{timestamp}/plotting_df.csv", index=False)
 
-    with open(f"./{timestamp}/config.json", "w") as outp:
+    fig.savefig(os.path.join("..", "experiment_artifacts", timestamp, "losses"))
+    plotting_df.to_csv(
+        os.path.join("..", "experiment_artifacts", timestamp, "plotting_df.csv"),
+        index=False,
+    )
+
+    with open(
+        os.path.join("..", "experiment_artifacts", timestamp, "config.json"), "w"
+    ) as outp:
         json.dump(config_dict, outp, indent=4)
 
     print(f"Process finished! Results saved in folder: {timestamp}")
