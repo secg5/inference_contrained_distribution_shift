@@ -1,12 +1,7 @@
 import os
-import pickle
-import sys
 
 import matplotlib.pyplot as plt
 import pandas as pd
-
-sys.path.append("../optimization")
-from datasets import *
 
 
 def generate_theta_plots_1_2_3(base_path: str, timestamp: str, ax):
@@ -30,10 +25,10 @@ def generate_theta_plots_1_2_3(base_path: str, timestamp: str, ax):
     max_vals_4 = plotting_df[
         (plotting_df["step"] == 2999) & (plotting_df["restriction_type"] == "DRO")
     ]["max_bound"]
-    # max_vals_5 = plotting_df[
-    #     (plotting_df["step"] == 2999)
-    #     & (plotting_df["restriction_type"] == "DRO_worst_case")
-    # ]["max_bound"]
+    max_vals_5 = plotting_df[
+        (plotting_df["step"] == 2999)
+        & (plotting_df["restriction_type"] == "DRO_worst_case")
+    ]["max_bound"]
 
     min_vals_1 = plotting_df[
         (plotting_df["step"] == 2999)
@@ -53,10 +48,10 @@ def generate_theta_plots_1_2_3(base_path: str, timestamp: str, ax):
     min_vals_4 = plotting_df[
         (plotting_df["step"] == 2999) & (plotting_df["restriction_type"] == "DRO")
     ]["min_bound"]
-    # min_vals_5 = plotting_df[
-    #     (plotting_df["step"] == 2999)
-    #     & (plotting_df["restriction_type"] == "DRO_worst_case")
-    # ]["min_bound"]
+    min_vals_5 = plotting_df[
+        (plotting_df["step"] == 2999)
+        & (plotting_df["restriction_type"] == "DRO_worst_case")
+    ]["min_bound"]
 
     # Experiment 1
     boxplot = ax.boxplot(
@@ -178,33 +173,33 @@ def generate_theta_plots_1_2_3(base_path: str, timestamp: str, ax):
     )
 
     # Experiment 5
-    # boxplot = ax.boxplot(
-    #     [max_vals_5, min_vals_5],
-    #     positions=[5, 5],
-    #     widths=0.2,
-    #     showfliers=False,
-    #     showbox=False,
-    #     showcaps=False,
-    # )
-    # ax.vlines(5, ymin=min(min_vals_5), ymax=max(max_vals_5))
+    boxplot = ax.boxplot(
+        [max_vals_5, min_vals_5],
+        positions=[5, 5],
+        widths=0.2,
+        showfliers=False,
+        showbox=False,
+        showcaps=False,
+    )
+    ax.vlines(5, ymin=min(min_vals_5), ymax=max(max_vals_5))
 
-    # # Fill between boxplot whiskers
-    # ax.fill_between(
-    #     [4.9, 5.1],
-    #     [boxplot["whiskers"][0].get_ydata()[1]] * 2,
-    #     [boxplot["whiskers"][1].get_ydata()[1]] * 2,
-    #     color="C0",
-    #     alpha=0.5,
-    #     hatch="//",
-    # )
-    # ax.fill_between(
-    #     [4.9, 5.1],
-    #     [boxplot["whiskers"][2].get_ydata()[1]] * 2,
-    #     [boxplot["whiskers"][3].get_ydata()[1]] * 2,
-    #     color="C0",
-    #     alpha=0.5,
-    #     hatch="//",
-    # )
+    # Fill between boxplot whiskers
+    ax.fill_between(
+        [4.9, 5.1],
+        [boxplot["whiskers"][0].get_ydata()[1]] * 2,
+        [boxplot["whiskers"][1].get_ydata()[1]] * 2,
+        color="C0",
+        alpha=0.5,
+        hatch="//",
+    )
+    ax.fill_between(
+        [4.9, 5.1],
+        [boxplot["whiskers"][2].get_ydata()[1]] * 2,
+        [boxplot["whiskers"][3].get_ydata()[1]] * 2,
+        color="C0",
+        alpha=0.5,
+        hatch="//",
+    )
 
     true_conditional_mean = plotting_df["true_conditional_mean"].mean()
     min_empirical_conditional_mean = plotting_df["empirical_conditional_mean"].min()
