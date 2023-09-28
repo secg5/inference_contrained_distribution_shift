@@ -3,7 +3,6 @@ import datetime
 import itertools
 import json
 import os
-import pickle
 from typing import Dict, List, Tuple
 
 import cvxpy as cp
@@ -290,7 +289,7 @@ def get_optimized_rho(
     loss_values = []
     n_sample = data_count_1.sum() + data_count_0.sum()
 
-    for _ in tqdm(range(n_iters), desc=f"Optimizing rho", leave=False):
+    for _ in tqdm(range(n_iters), desc="Optimizing rho", leave=False):
         w = cp.Variable(feature_weights.shape[1])
         alpha_fixed = alpha.squeeze().detach().numpy()
         alpha_fixed = torch.cat([alpha_fixed], dim=0)
@@ -420,8 +419,8 @@ def build_strata_covs_matrix(
 
     all_matrices = []
     for covs in all_covs:
-        data_covs_0 = covs[0][0]
-        data_covs_1 = covs[0][1]
+        data_covs_0 = covs[0]
+        data_covs_1 = covs[1]
 
         for level in range(level_size):
             t = data_covs_0[level].flatten().unsqueeze(1)
@@ -684,12 +683,10 @@ if __name__ == "__main__":
         }
 
         if config.n_cov_pairs:
-            strata_estimands["cov"] = (
-                get_strata_covs(
-                    strata_dfs=strata_dfs,
-                    levels=dataset.levels_colinear,
-                    all_feature_means=all_feature_means,
-                ),
+            strata_estimands["cov"] = get_strata_covs(
+                strata_dfs=strata_dfs,
+                levels=dataset.levels_colinear,
+                all_feature_means=all_feature_means,
             )
 
         strata_estimands_population = {
