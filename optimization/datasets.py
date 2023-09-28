@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 from folktables import ACSDataSource, ACSEmployment
 from scipy.special import expit
+from sklearn.preprocessing import MinMaxScaler
 
 
 @dataclass
@@ -72,18 +73,18 @@ class SimulationLoader(DatasetLoader):
         # )
         # X_total = np.stack((X_1, X_2), axis=-1)
 
-        X = np.random.choice(a=[0, 1, 2], size=self.dataset_size, p=[0.5, 0.3, 0.2])
-        X_2 = np.random.binomial(size=self.dataset_size, n=1, p=0.4)
+        X = self.rng.choice(a=[0, 1, 2], size=self.dataset_size, p=[0.5, 0.3, 0.2])
+        X_2 = self.rng.binomial(size=self.dataset_size, n=1, p=0.4)
 
         pi_A = expit(X_2 - X)
-        A = 1 * (pi_A > np.random.uniform(size=self.dataset_size))
+        A = 1 * (pi_A > self.rng.uniform(size=self.dataset_size))
         mu = expit(2 * A - X + X_2)
-        y = 1 * (mu > np.random.uniform(size=self.dataset_size))
+        y = 1 * (mu > self.rng.uniform(size=self.dataset_size))
 
         mu2 = expit((X + X_2) / 2 - A)
-        y2 = 1 * (mu2 > np.random.uniform(size=self.dataset_size))
+        y2 = 1 * (mu2 > self.rng.uniform(size=self.dataset_size))
 
-        obs = expit(X - X_2) > np.random.uniform(size=self.dataset_size)
+        obs = expit(X - X_2) > self.rng.uniform(size=self.dataset_size)
         X_total = np.stack((X, X_2), axis=-1)
 
         return X_total, A, y, obs, y2
@@ -168,6 +169,8 @@ class FolktablesLoader(DatasetLoader):
         survey_year: str = "2018",
         horizon: str = "1-Year",
         survey: str = "person",
+        alternate_outcome: str = "DIS_1",
+        conditioning_features: List[str] = None,
         size=None,
         buckets: dict = None,
     ) -> None:
@@ -177,7 +180,10 @@ class FolktablesLoader(DatasetLoader):
         self.survey_year = survey_year
         self.horizon = horizon
         self.survey = survey
+        self.alternate_outcome = alternate_outcome
         self.size = size
+        if not conditioning_features:
+            self.conditioning_features = feature_names[:2]
         if buckets:
             self.buckets = buckets
         else:
@@ -269,7 +275,6 @@ class FolktablesLoader(DatasetLoader):
         X, A, y, obs = self._download_data()
 
         X_sample = X[obs]
-        A_sample = A[obs]
         y_sample = y[obs]
 
         # Compute conditional mean using sex feature
@@ -284,9 +289,7 @@ class FolktablesLoader(DatasetLoader):
         levels = [["white"]] + levels
         population_df["Creditability"] = y
 
-        sample_df, _ = self._create_dataframe(
-            X_sample, A_sample, self.feature_names, full=False
-        )
+        sample_df = population_df[obs].copy()
         sample_df["Creditability"] = y_sample
 
         population_df_colinear, levels_colinear = self._create_dataframe(
@@ -295,9 +298,7 @@ class FolktablesLoader(DatasetLoader):
         levels_colinear = [["white", "non-white"]] + levels_colinear
         population_df_colinear["Creditability"] = y
 
-        sample_df_colinear, _ = self._create_dataframe(
-            X_sample, A_sample, self.feature_names, full=True
-        )
+        sample_df_colinear = population_df_colinear[obs].copy()
         sample_df_colinear["Creditability"] = y_sample
 
         dataset = Dataset(
@@ -308,7 +309,7 @@ class FolktablesLoader(DatasetLoader):
             levels=levels,
             levels_colinear=levels_colinear,
             target="Creditability",
-            alternate_outcome="DEAR_1",
+            alternate_outcome=self.alternate_outcome,
             empirical_conditional_mean=empirical_conditional_mean,
             true_conditional_mean=true_conditional_mean,
         )

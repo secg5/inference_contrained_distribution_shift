@@ -264,21 +264,81 @@ def get_count_restrictions(
 def compute_f_divergence(p, q, type="chi2"):
     if type == "chi2":
         # return 0.5 * torch.sum((p-q)**2/(p+q+1e-8))
-        return 0.5 * torch.sum((p - q) ** 2 / (q + 1e-8))
+        numerator = (p - q) ** 2
+        denominator = q + 1e-8
+        return 0.5 * torch.sum(numerator / denominator)
     else:
         raise ValueError(f"Invalid divergence type {type}.")
 
-    # # Creates groundtruth values to generate linear restrictions *for other outcome*.
-    # other_y00_female = sum((data["other_outcome"] == 0) & (data["female"] == 1))
-    # other_y01_female = sum((data["other_outcome"] == 1) & (data["female"] == 1))
 
-    # other_y00_male = sum((data["other_outcome"] == 0) & (data["male"] == 1))
-    # other_y01_male = sum((data["other_outcome"] == 1) & (data["male"] == 1))
+def get_optimized_rho(
+    A_dict,
+    strata_estimands,
+    feature_weights,
+    restriction_values,
+    n_iters,
+    restriction_type,
+    dataset_size,
+):
+    """Computes the optimal rho for the DRO optimization problem."""
+    data_count_0 = strata_estimands["count"][0]
+    data_count_1 = strata_estimands["count"][1]
 
-    # other_b0 = np.array([other_y00_female, other_y00_male])
-    # other_b1 = np.array([other_y01_female, other_y01_male])
+    torch.autograd.set_detect_anomaly(True)
+    alpha = torch.rand(feature_weights.shape[1], requires_grad=True)
+    optim = torch.optim.Adam([alpha], 0.01)
+    loss_values = []
+    n_sample = data_count_1.sum() + data_count_0.sum()
 
-    # other_A0, other_A1 = build_strata_counts_matrix(weights_features, counts2, ["female", "male"])
+    for _ in tqdm(range(n_iters), desc=f"Optimizing rho", leave=False):
+        w = cp.Variable(feature_weights.shape[1])
+        alpha_fixed = alpha.squeeze().detach().numpy()
+        alpha_fixed = torch.cat([alpha_fixed], dim=0)
+
+        ratio = feature_weights @ w
+        q = (data_count_1 + data_count_0) / n_sample
+        q = q.reshape(-1, 1)
+        q = torch.flatten(q)
+
+        objective = cp.sum_squares(w - alpha_fixed)
+        restrictions = get_restrictions(
+            restriction_type=restriction_type,
+            A_dict=A_dict,
+            w=w,
+            restriction_values=restriction_values,
+            n_sample=n_sample,
+            dataset_size=dataset_size,
+            ratio=ratio,
+            q=q,
+        )
+
+        prob = cp.Problem(cp.Minimize(objective), restrictions)
+        prob.solve()
+
+        if w.value is None:
+            print("\nOptimization failed.\n")
+            break
+
+        alpha.data = torch.tensor(w.value).float()
+        weights_y1 = (feature_weights @ alpha).reshape(*data_count_1.shape)
+        weights_y0 = (feature_weights @ alpha).reshape(*data_count_0.shape)
+        weighted_counts_1 = weights_y1 * data_count_1
+        weighted_counts_0 = weights_y0 * data_count_0
+
+        rho = compute_f_divergence(
+            strata_estimands["count"] / dataset_size,
+            torch.stack([weighted_counts_0, weighted_counts_1], dim=0) / sample_size,
+            type="chi2",
+        )
+
+        loss = -rho
+        loss_values.append(float(rho.detach().numpy()))
+
+        optim.zero_grad()
+        loss.backward()
+        optim.step()
+
+    return float(rho.detach().numpy()), loss_values
 
 
 def get_cov_restrictions(
@@ -360,8 +420,8 @@ def build_strata_covs_matrix(
 
     all_matrices = []
     for covs in all_covs:
-        data_covs_0 = covs[0]
-        data_covs_1 = covs[1]
+        data_covs_0 = covs[0][0]
+        data_covs_1 = covs[0][1]
 
         for level in range(level_size):
             t = data_covs_0[level].flatten().unsqueeze(1)
@@ -384,9 +444,9 @@ def get_restrictions(
     restriction_values,
     n_sample,
     dataset_size,
-    rho,
     ratio,
     q,
+    rho=None,
 ):
     restrictions = [feature_weights @ w >= n_sample / dataset_size]
     if restriction_type == "count":
@@ -416,7 +476,7 @@ def get_restrictions(
                 cov_pair[0] @ w >= restriction_pair[0],
                 cov_pair[1] @ w >= restriction_pair[1],
             ]
-    elif restriction_type == "DRO":
+    elif restriction_type == "DRO" or restriction_type == "DRO_worst_case":
         chi_square_divergence = cp.multiply((ratio - 1) ** 2, q)
         restrictions += [0.5 * cp.sum(chi_square_divergence) <= rho]
     else:
@@ -517,6 +577,10 @@ if __name__ == "__main__":
     config = parse_config_dict(config_dict)
 
     plotting_dfs = []
+    c_time = datetime.datetime.now()
+    timestamp = str(c_time.strftime("%b%d-%H%M"))
+    os.mkdir(timestamp)
+
     param_combinations = list(
         itertools.product(
             config.matrix_types, config.restriction_trials, config.random_seeds
@@ -634,12 +698,6 @@ if __name__ == "__main__":
             )
         }
 
-        rho = compute_f_divergence(
-            strata_estimands_population["DRO"] / dataset_size,
-            strata_estimands["count"] / sample_size,
-            type="chi2",
-        )
-
         feature_weights = get_feature_weights(
             matrix_type=matrix_type,
             dataset_type=config.dataset_type,
@@ -665,8 +723,45 @@ if __name__ == "__main__":
                 feature_weights, strata_estimands["cov"], treatment_level
             )
 
-        if restriction_type == "DRO" and matrix_type != "Nx12":
+        if restriction_type.startswith("DRO") and matrix_type != "Nx12":
             continue
+
+        if restriction_type == "DRO_worst_case":
+            rho, rho_history = get_optimized_rho(
+                A_dict=A_dict,
+                strata_estimands=strata_estimands,
+                feature_weights=feature_weights,
+                restriction_values=restriction_values,
+                n_iters=config.n_optim_iters,
+                restriction_type="count",
+                dataset_size=dataset_size,
+            )
+
+            rho_perfect = compute_f_divergence(
+                strata_estimands_population["DRO"] / dataset_size,
+                strata_estimands["count"] / sample_size,
+                type="chi2",
+            )
+
+            fig, ax = plt.subplots(1, 1, figsize=(10, 5))
+            ax.plot(rho_history)
+            ax.axhline(
+                y=rho_perfect, color="cyan", linestyle="dashed", label="Real Rho"
+            )
+            ax.set_title("Optimized Rho")
+            ax.set_ylabel("Rho")
+            ax.set_xlabel("Iteration")
+            ax.legend()
+            fig.savefig(f"./{timestamp}/rho_{random_seed}_{matrix_type}")
+        elif restriction_type == "DRO":
+            rho = compute_f_divergence(
+                strata_estimands_population["DRO"] / dataset_size,
+                strata_estimands["count"] / sample_size,
+                type="chi2",
+            )
+        else:
+            rho = None
+
         for trial_idx in tqdm(range(config.n_trials), desc="Trials", leave=False):
             max_bound, max_loss_values, alpha_max = run_search(
                 A_dict=A_dict,
@@ -728,9 +823,6 @@ if __name__ == "__main__":
             "random_seed": np.int64,
         }
     )
-    c_time = datetime.datetime.now()
-    timestamp = str(c_time.strftime("%b%d-%H%M"))
-    os.mkdir(timestamp)
 
     fig, ax = plt.subplots(1, 1, figsize=(10, 5))
     ax.axhline(
