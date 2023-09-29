@@ -1,6 +1,5 @@
 import os
 
-import matplotlib.pyplot as plt
 import pandas as pd
 
 
@@ -63,7 +62,11 @@ def generate_theta_plots_1_2_3(base_path: str, timestamp: str, ax):
         showbox=False,
         showcaps=False,
     )
-    ax.vlines(1, ymin=min(min_vals_1), ymax=max(max_vals_1))
+    ax.vlines(
+        1,
+        ymin=boxplot["whiskers"][0].get_ydata()[1],
+        ymax=boxplot["whiskers"][3].get_ydata()[1],
+    )
 
     # Fill between boxplot whiskers
     ax.fill_between(
@@ -93,7 +96,11 @@ def generate_theta_plots_1_2_3(base_path: str, timestamp: str, ax):
         showcaps=False,
         showmeans=False,
     )
-    ax.vlines(2, ymin=min(min_vals_2), ymax=max(max_vals_2))
+    ax.vlines(
+        2,
+        ymin=boxplot["whiskers"][0].get_ydata()[1],
+        ymax=boxplot["whiskers"][3].get_ydata()[1],
+    )
 
     # Fill between boxplot whiskers
     ax.fill_between(
@@ -123,7 +130,11 @@ def generate_theta_plots_1_2_3(base_path: str, timestamp: str, ax):
         showmeans=False,
         showcaps=False,
     )
-    ax.vlines(3, ymin=min(min_vals_3), ymax=max(max_vals_3))
+    ax.vlines(
+        3,
+        ymin=boxplot["whiskers"][0].get_ydata()[1],
+        ymax=boxplot["whiskers"][3].get_ydata()[1],
+    )
 
     # Fill between boxplot whiskers
     ax.fill_between(
@@ -152,7 +163,11 @@ def generate_theta_plots_1_2_3(base_path: str, timestamp: str, ax):
         showbox=False,
         showcaps=False,
     )
-    ax.vlines(4, ymin=min(min_vals_4), ymax=max(max_vals_4))
+    ax.vlines(
+        4,
+        ymin=boxplot["whiskers"][0].get_ydata()[1],
+        ymax=boxplot["whiskers"][3].get_ydata()[1],
+    )
 
     # Fill between boxplot whiskers
     ax.fill_between(
@@ -181,7 +196,11 @@ def generate_theta_plots_1_2_3(base_path: str, timestamp: str, ax):
         showbox=False,
         showcaps=False,
     )
-    ax.vlines(5, ymin=min(min_vals_5), ymax=max(max_vals_5))
+    ax.vlines(
+        5,
+        ymin=boxplot["whiskers"][0].get_ydata()[1],
+        ymax=boxplot["whiskers"][3].get_ydata()[1],
+    )
 
     # Fill between boxplot whiskers
     ax.fill_between(
@@ -225,8 +244,10 @@ def generate_theta_plots_1_2_3(base_path: str, timestamp: str, ax):
         hatch="//",
     )
 
-    ax.set_xticks([1, 2, 3, 4])
-    ax.set_xticklabels(["Experiment 1", "Experiment 2", "Experiment 3", "DRO"])
+    ax.set_xticks([1, 2, 3, 4, 5])
+    ax.set_xticklabels(
+        ["Experiment 1", "Experiment 2", "Experiment 3", "DRO", "DRO (Worst Case)"]
+    )
 
     ax.tick_params(axis="both", which="major", labelsize=13)
     ax.tick_params(axis="both", which="minor", labelsize=16)
@@ -394,7 +415,6 @@ def generate_theta_plots_4_5_6(base_path: str, timestamp: str, ax):
     ax.tick_params(axis="both", which="major", labelsize=13)
     ax.tick_params(axis="both", which="minor", labelsize=16)
 
-    # ax.set_ylabel("Conditional Mean $\widehat{\mathbb{E}}[Y|A=1]$", fontsize=20)
     ax.set_xlabel("Number of constraints in $\\theta(X)$", fontsize=20)
 
 
@@ -417,7 +437,7 @@ def generate_cov_plots(base_path: str, timestamp: str, ax):
         (plotting_df["step"] == 2999) & (plotting_df["restriction_type"] == "count")
     ]["min_bound"]
 
-    # Coov
+    # Cov
     boxplot = ax.boxplot(
         [max_vals_cov, min_vals_cov],
         positions=[1, 1],
@@ -427,7 +447,11 @@ def generate_cov_plots(base_path: str, timestamp: str, ax):
         showmeans=False,
         showcaps=False,
     )
-    plt.vlines(1, ymin=min(min_vals_cov), ymax=max(max_vals_cov))
+    ax.vlines(
+        1,
+        ymin=boxplot["whiskers"][0].get_ydata()[1],
+        ymax=boxplot["whiskers"][3].get_ydata()[1],
+    )
 
     # Fill between boxplot whiskers
     ax.fill_between(
@@ -457,7 +481,11 @@ def generate_cov_plots(base_path: str, timestamp: str, ax):
         showmeans=False,
         showcaps=False,
     )
-    plt.vlines(2, ymin=min(min_vals_count), ymax=max(max_vals_count))
+    ax.vlines(
+        2,
+        ymin=boxplot["whiskers"][0].get_ydata()[1],
+        ymax=boxplot["whiskers"][3].get_ydata()[1],
+    )
 
     # Fill between boxplot whiskers
     ax.fill_between(
