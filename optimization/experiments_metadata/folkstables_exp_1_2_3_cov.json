@@ -6,8 +6,8 @@
     "correlation_coeff": 1,
     "dataset_size": null,
     "feature_names": [
-        "MIL",
-        "ANC",
+        "CIT",
+        "MIG",
         "NATIVITY",
         "DIS",
         "SEX"
@@ -18,12 +18,16 @@
     "n_trials": 1,
     "n_optim_iters": 3000,
     "restriction_trials": [
-        "cov_positive"
+        "cov_positive",
+        "count",
+        "count_plus",
+        "count_minus"
     ],
     "matrix_types": [
+        "Nx6",
         "Nx8",
-        "Nx6"
+        "Nx12"
     ],
     "statistic": "conditional_mean",
-    "n_cov_pairs": 2
+    "n_cov_pairs": 1
 }

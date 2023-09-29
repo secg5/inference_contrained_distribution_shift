@@ -1,13 +1,17 @@
 {
     "random_seeds": [
-        0
+        0,
+        1,
+        2,
+        3,
+        4
     ],
     "dataset_type": "folktables",
     "correlation_coeff": 1,
     "dataset_size": null,
     "feature_names": [
+        "CIT",
         "MIL",
-        "ANC",
         "NATIVITY",
         "DIS",
         "SEX"

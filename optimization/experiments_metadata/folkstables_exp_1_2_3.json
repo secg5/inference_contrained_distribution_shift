@@ -1,13 +1,17 @@
 {
     "random_seeds": [
-        0
+        0,
+        1,
+        2,
+        3,
+        4
     ],
     "dataset_type": "folktables",
     "correlation_coeff": 1,
     "dataset_size": null,
     "feature_names": [
+        "CIT",
         "MIL",
-        "ANC",
         "NATIVITY",
         "DIS",
         "SEX"
@@ -18,6 +22,8 @@
     "n_trials": 1,
     "n_optim_iters": 3000,
     "restriction_trials": [
+        "DRO_worst_case",
+        "DRO",
         "count"
     ],
     "matrix_types": [
