@@ -292,7 +292,6 @@ def get_optimized_rho(
     for _ in tqdm(range(n_iters), desc="Optimizing rho", leave=False):
         w = cp.Variable(feature_weights.shape[1])
         alpha_fixed = alpha.squeeze().detach().numpy()
-        alpha_fixed = torch.cat([alpha_fixed], dim=0)
 
         ratio = feature_weights @ w
         q = (data_count_1 + data_count_0) / n_sample
