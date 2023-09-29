@@ -217,7 +217,8 @@ class FolktablesLoader(DatasetLoader):
 
         X_selected = df.to_numpy()
 
-        obs = expit(X_selected[:, 0] - X_selected[:, 1]) > self.rng.uniform(
+        X_normed = MinMaxScaler().fit_transform(X_selected)
+        obs = expit(-X_normed[:, 0] - X_normed[:, 1]) > self.rng.uniform(
             size=X.shape[0]
         )
         size = X.shape[0] if not self.size else self.size
