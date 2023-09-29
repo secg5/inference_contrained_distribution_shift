@@ -611,7 +611,7 @@ if __name__ == "__main__":
         else:
             raise ValueError(f"Invalid dataset type {config.dataset_type}.")
 
-        if config.n_cov_pairs:
+        if config.n_cov_pairs and restriction_type.startswith("cov"):
             all_cov_vars = get_cov_pairs(
                 n_pairs=config.n_cov_pairs,
                 dataset=dataset,
@@ -642,7 +642,7 @@ if __name__ == "__main__":
             ),
         }
 
-        if config.n_cov_pairs:
+        if config.n_cov_pairs and restriction_type.startswith("cov"):
             restriction_values["cov"] = get_cov_restrictions(
                 data=dataset.population_df_colinear,
                 target=dataset.target,
@@ -683,7 +683,7 @@ if __name__ == "__main__":
             ),
         }
 
-        if config.n_cov_pairs:
+        if config.n_cov_pairs and restriction_type.startswith("cov"):
             strata_estimands["cov"] = get_strata_covs(
                 strata_dfs=strata_dfs,
                 levels=dataset.levels_colinear,
@@ -716,7 +716,7 @@ if __name__ == "__main__":
             ),
         }
 
-        if config.n_cov_pairs:
+        if config.n_cov_pairs and restriction_type.startswith("cov"):
             A_dict["cov"] = build_strata_covs_matrix(
                 feature_weights, strata_estimands["cov"], treatment_level
             )
