@@ -211,8 +211,9 @@ def get_strata_counts(
             strata_counts.append(0.00001)
         else:
             strata_counts.append(strata_df.shape[0])
-
+    
     output_shape = [2] + [len(level) for level in levels]
+    
     return torch.tensor(strata_counts).reshape(output_shape)
 
 
@@ -339,33 +340,33 @@ def get_optimized_rho(
     return float(rho.detach().numpy()), loss_values
 
 
-def get_cov_restrictions(
-    data: pd.DataFrame,
-    target: str,
-    treatment_level: List[str],
-    all_cov_vars: List[List[str]],
-) -> Tuple[np.ndarray, np.ndarray]:
-    y_00_val_1_df = data[(data[target] == 0) & (data[treatment_level[0]] == 1)]
-    y_01_val_1_df = data[(data[target] == 1) & (data[treatment_level[0]] == 1)]
-    y_00_val_2_df = data[(data[target] == 0) & (data[treatment_level[1]] == 1)]
-    y_01_val_2_df = data[(data[target] == 1) & (data[treatment_level[1]] == 1)]
+# def get_cov_restrictions(
+#     data: pd.DataFrame,
+#     target: str,
+#     treatment_level: List[str],
+#     all_cov_vars: List[List[str]],
+# ) -> Tuple[np.ndarray, np.ndarray]:
+#     y_00_val_1_df = data[(data[target] == 0) & (data[treatment_level[0]] == 1)]
+#     y_01_val_1_df = data[(data[target] == 1) & (data[treatment_level[0]] == 1)]
+#     y_00_val_2_df = data[(data[target] == 0) & (data[treatment_level[1]] == 1)]
+#     y_01_val_2_df = data[(data[target] == 1) & (data[treatment_level[1]] == 1)]
 
-    all_cov_restrictions = []
-    for cov_vars in all_cov_vars:
-        y_00_val_1 = y_00_val_1_df.cov().loc[*cov_vars]
-        y_01_val_1 = y_01_val_1_df.cov().loc[*cov_vars]
-        y_00_val_2 = y_00_val_2_df.cov().loc[*cov_vars]
-        y_01_val_2 = y_01_val_2_df.cov().loc[*cov_vars]
+#     all_cov_restrictions = []
+#     for cov_vars in all_cov_vars:
+#         y_00_val_1 = y_00_val_1_df.cov().loc[*cov_vars]
+#         y_01_val_1 = y_01_val_1_df.cov().loc[*cov_vars]
+#         y_00_val_2 = y_00_val_2_df.cov().loc[*cov_vars]
+#         y_01_val_2 = y_01_val_2_df.cov().loc[*cov_vars]
 
-        restriction_00 = np.array([y_00_val_1, y_00_val_2])
-        restriction_01 = np.array([y_01_val_1, y_01_val_2])
-        all_cov_restrictions.append((restriction_00, restriction_01))
-    return all_cov_restrictions
+#         restriction_00 = np.array([y_00_val_1, y_00_val_2])
+#         restriction_01 = np.array([y_01_val_1, y_01_val_2])
+#         all_cov_restrictions.append((restriction_00, restriction_01))
+#     return all_cov_restrictions
 
 
 def build_strata_counts_matrix(
-    feature_weights: torch.Tensor, counts: torch.Tensor, treatment_level: List[str]
-):
+    feature_weights: torch.Tensor, counts: torch.Tensor, treatment_level: List[str],
+    treatment_level_restriction: List[str] = ['SCHL_0', 'SCHL_1']):
     """Builds linear restrictions for a convex optimization problem, according to
     a specific restrictions parameterization. This is the phi parametrization described
     in the paper.
@@ -385,26 +386,40 @@ def build_strata_counts_matrix(
 
     returns A_0, A_1
     """
-    _, features = feature_weights.shape
+    _, features_n = feature_weights.shape
     level_size = len(treatment_level)
 
-    y_0_ground_truth = torch.zeros(level_size, features)
-    y_1_ground_truth = torch.zeros(level_size, features)
+    y_0_treatment = torch.zeros(level_size, features_n)
+    y_1_treatment = torch.zeros(level_size, features_n)
 
     data_count_0 = counts[0]
     data_count_1 = counts[1]
 
-    for level in range(level_size):
+    for level in range(2):
         t = data_count_0[level].flatten().unsqueeze(1)
         features = feature_weights[level * t.shape[0] : (level + 1) * t.shape[0]]
-        y_0_ground_truth[level] = (features * t).sum(dim=0)
+        y_0_treatment[level] = (features * t).sum(dim=0)
 
     for level in range(level_size):
         t_ = data_count_1[level].flatten().unsqueeze(1)
         features_ = feature_weights[level * t.shape[0] : (level + 1) * t.shape[0]]
-        y_1_ground_truth[level] = (features_ * t_).sum(dim=0)
+        y_1_treatment[level] = (features_ * t_).sum(dim=0)
+    
+    y_0_alt_treatment = torch.zeros(level_size, features_n)
+    y_1_alt_treatment = torch.zeros(level_size, features_n)
+    # revisar orden del alpha
+    for level in range(level_size):
+        t = data_count_0.select(-1, level).flatten().unsqueeze(1)
+        features = feature_weights[level::2]
+        y_0_alt_treatment[level] = (features * t).sum(dim=0)
 
-    return y_0_ground_truth.numpy(), y_1_ground_truth.numpy()
+    for level in range(level_size):
+        t_ = data_count_1.select(-1, level).flatten().unsqueeze(1)
+        features_ = feature_weights[level::2]
+        y_1_alt_treatment[level] = (features_ * t_).sum(dim=0)
+    # import pdb; pdb.set_trace()
+    # quit()
+    return y_0_treatment.numpy(), y_1_treatment.numpy(), y_0_alt_treatment.numpy(), y_1_alt_treatment.numpy()
 
 
 def build_strata_covs_matrix(
@@ -447,20 +462,21 @@ def get_restrictions(
     rho=None,
 ):
     restrictions = [feature_weights @ w >= n_sample / dataset_size]
+    # import pdb; pdb.set_trace()
     if restriction_type == "count":
         restrictions += [
-            A_dict["count"][0] @ w == restriction_values["count"][0],
-            A_dict["count"][1] @ w == restriction_values["count"][1],
+            A_dict["count"][2] @ w == restriction_values["count"][0],
+            A_dict["count"][3] @ w == restriction_values["count"][1],
         ]
     elif restriction_type == "count_minus":
         restrictions += [
-            A_dict["count_minus"][0] @ w == restriction_values["count_minus"][0]
+            A_dict["count_minus"][2] @ w == restriction_values["count_minus"][0]
         ]
     elif restriction_type == "count_plus":
         restrictions += [
-            A_dict["count_plus"][0] @ w == restriction_values["count_plus"][0],
-            A_dict["count_plus"][1] @ w == restriction_values["count_plus"][1],
-            A_dict["count_plus"][3] @ w == restriction_values["count_plus"][3],
+            A_dict["count_plus"][2] @ w == restriction_values["count_plus"][0],
+            A_dict["count_plus"][3] @ w == restriction_values["count_plus"][1],
+            A_dict["count_plus"][4] @ w == restriction_values["count_plus"][2],
         ]
     elif restriction_type == "cov_positive":
         for cov_pair in A_dict["cov"]:
@@ -504,7 +520,7 @@ def run_search(
     loss_values = []
     n_sample = data_count_1.sum() + data_count_0.sum()
 
-    for _ in tqdm(
+    for index in tqdm(
         range(n_iters), desc=f"Optimizing Upper Bound: {upper_bound}", leave=False
     ):
         w = cp.Variable(feature_weights.shape[1])
@@ -541,15 +557,16 @@ def run_search(
         weighted_counts_1 = weights_y1 * data_count_1
         weighted_counts_0 = weights_y0 * data_count_0
 
-        w_counts_1 = weighted_counts_1.select(-1, 1)
-        w_counts_0 = weighted_counts_0.select(-1, 1)
+        w_counts_1 = weighted_counts_1.select(0, 0)
+        w_counts_0 = weighted_counts_0.select(0, 0)
 
         size = w_counts_1.sum() + w_counts_0.sum()
         conditional_mean = w_counts_1.sum() / size
 
         loss = -conditional_mean if upper_bound else conditional_mean
         loss_values.append(conditional_mean.detach().numpy())
-
+        # if index % 100 == 0:
+        #     print(loss)
         optim.zero_grad()
         loss.backward()
         optim.step()
@@ -605,6 +622,9 @@ if __name__ == "__main__":
             )
             dataset = data_loader.load()
             treatment_level = dataset.levels_colinear[0]
+            treatment_level_restriction = dataset.levels_colinear[-1]
+            print("treatment_level_restriction", treatment_level_restriction)
+            print(dataset.levels_colinear)
             dataset_size = dataset.population_df_colinear.shape[0]
             sample_size = dataset.sample_df_colinear.shape[0]
         else:
@@ -622,22 +642,22 @@ if __name__ == "__main__":
             "count": get_count_restrictions(
                 data=dataset.population_df_colinear,
                 target=dataset.target,
-                treatment_level=treatment_level,
+                treatment_level=treatment_level_restriction,
             ),
             "count_minus": get_count_restrictions(
                 data=dataset.population_df_colinear,
                 target=dataset.target,
-                treatment_level=treatment_level,
+                treatment_level=treatment_level_restriction,
             ),
             "count_plus": get_count_restrictions(
                 data=dataset.population_df_colinear,
                 target=dataset.target,
-                treatment_level=treatment_level,
+                treatment_level=treatment_level_restriction,
             )
             + get_count_restrictions(
                 data=dataset.population_df_colinear,
                 target=dataset.alternate_outcome,
-                treatment_level=treatment_level,
+                treatment_level=treatment_level_restriction,
             ),
         }
 
@@ -657,6 +677,7 @@ if __name__ == "__main__":
                 }
                 all_feature_means.append(feature_means)
 
+        # Review the experiment with the alternative outcome
         strata_dfs = get_feature_strata(
             df=dataset.sample_df_colinear,
             levels=dataset.levels_colinear,
@@ -672,7 +693,7 @@ if __name__ == "__main__":
             levels=dataset.levels_colinear,
             target=dataset.target,
         )
-
+        # This needs better naming
         strata_estimands = {
             "count": get_strata_counts(
                 strata_dfs=strata_dfs, levels=dataset.levels_colinear
@@ -681,7 +702,7 @@ if __name__ == "__main__":
                 strata_dfs=strata_dfs_alternate_outcome, levels=dataset.levels_colinear
             ),
         }
-
+        print("levels_colinear", dataset.levels_colinear)
         if config.n_cov_pairs and restriction_type.startswith("cov"):
             strata_estimands["cov"] = get_strata_covs(
                 strata_dfs=strata_dfs,

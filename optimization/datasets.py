@@ -203,18 +203,35 @@ class FolktablesLoader(DatasetLoader):
         data_source = ACSDataSource(
             survey_year=self.survey_year, horizon=self.horizon, survey=self.survey
         )
+
         acs_data = data_source.get_data(states=self.states, download=True)
         X, y, group = ACSEmployment.df_to_numpy(acs_data)
+
         A = 1 * (group == 1)
 
         X = X.astype(int)
         y = y.astype(int)
+        def transform_values(value):
+            if value < 20:
+                return 1
+            elif 20 <= value <= 24:
+                return 2
+            else:
+                return None 
+        
+        mapping = {0: 1, 1: 1, 2: 1, 3: 1, 4: 0}
 
+       
         # last feature is the group
         df = pd.DataFrame(X, columns=ACSEmployment.features)
-        df = self._group_features(df)
+        # df = self._group_features(df)
         df = df[self.feature_names]
-
+        df['EDU'] = df['SCHL'].apply(transform_values)
+        df = df.drop('SCHL', axis=1)
+        df = df.rename(columns={'EDU': 'SCHL'}, inplace=False)
+         # Apply the mapping to the column
+        df['MIL'] = df['MIL'].map(mapping)
+        
         X_selected = df.to_numpy()
 
         X_normed = MinMaxScaler().fit_transform(X_selected)
@@ -258,6 +275,7 @@ class FolktablesLoader(DatasetLoader):
                 str(feature_names[column_idx]) + "_" + str(j)
                 for j in range(int(strata_number))
             ]
+            print(names, features.shape[1])
             if full:
                 data[names] = 0
                 data[names] = features
@@ -270,6 +288,7 @@ class FolktablesLoader(DatasetLoader):
             data[["white", "non-white"]] = pd.get_dummies(A)
         else:
             data["white"] = pd.get_dummies(A)[0]
+        # import pdb; pdb.set_trace()
         return data, levels
 
     def load(self) -> Dataset:
