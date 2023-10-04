@@ -1,54 +1,55 @@
 import os
 
 import pandas as pd
-
+STEP = 3499
+STEP_TWO = 4999
 
 def generate_theta_plots_1_2_3(base_path: str, timestamp: str, ax):
     plotting_df = pd.read_csv(os.path.join(base_path, timestamp, "plotting_df.csv"))
 
     max_vals_1 = plotting_df[
-        (plotting_df["step"] == 2999)
+        (plotting_df["step"] == STEP)
         & (plotting_df["matrix_type"] == "Nx12")
         & (plotting_df["restriction_type"] == "count")
     ]["max_bound"]
     max_vals_2 = plotting_df[
-        (plotting_df["step"] == 2999)
+        (plotting_df["step"] == STEP)
         & (plotting_df["matrix_type"] == "Nx8")
         & (plotting_df["restriction_type"] == "count")
     ]["max_bound"]
     max_vals_3 = plotting_df[
-        (plotting_df["step"] == 2999)
+        (plotting_df["step"] == STEP)
         & (plotting_df["matrix_type"] == "Nx6")
         & (plotting_df["restriction_type"] == "count")
     ]["max_bound"]
     max_vals_4 = plotting_df[
-        (plotting_df["step"] == 2999) & (plotting_df["restriction_type"] == "DRO")
+        (plotting_df["step"] == STEP) & (plotting_df["restriction_type"] == "DRO")
     ]["max_bound"]
     max_vals_5 = plotting_df[
-        (plotting_df["step"] == 2999)
+        (plotting_df["step"] == STEP)
         & (plotting_df["restriction_type"] == "DRO_worst_case")
     ]["max_bound"]
 
     min_vals_1 = plotting_df[
-        (plotting_df["step"] == 2999)
+        (plotting_df["step"] == STEP)
         & (plotting_df["matrix_type"] == "Nx12")
         & (plotting_df["restriction_type"] == "count")
     ]["min_bound"]
     min_vals_2 = plotting_df[
-        (plotting_df["step"] == 2999)
+        (plotting_df["step"] == STEP)
         & (plotting_df["matrix_type"] == "Nx8")
         & (plotting_df["restriction_type"] == "count")
     ]["min_bound"]
     min_vals_3 = plotting_df[
-        (plotting_df["step"] == 2999)
+        (plotting_df["step"] == STEP)
         & (plotting_df["matrix_type"] == "Nx8")
         & (plotting_df["restriction_type"] == "count")
     ]["min_bound"]
     min_vals_4 = plotting_df[
-        (plotting_df["step"] == 2999) & (plotting_df["restriction_type"] == "DRO")
+        (plotting_df["step"] == STEP) & (plotting_df["restriction_type"] == "DRO")
     ]["min_bound"]
     min_vals_5 = plotting_df[
-        (plotting_df["step"] == 2999)
+        (plotting_df["step"] == STEP)
         & (plotting_df["restriction_type"] == "DRO_worst_case")
     ]["min_bound"]
 
@@ -260,26 +261,26 @@ def generate_theta_plots_4_5_6(base_path: str, timestamp: str, ax):
     plotting_df = pd.read_csv(os.path.join(base_path, timestamp, "plotting_df.csv"))
 
     max_vals_1 = plotting_df[
-        (plotting_df["step"] == 2999)
+        (plotting_df["step"] == STEP_TWO)
         & (plotting_df["restriction_type"] == "count_minus")
     ]["max_bound"]
     max_vals_2 = plotting_df[
-        (plotting_df["step"] == 2999) & (plotting_df["restriction_type"] == "count")
+        (plotting_df["step"] == STEP_TWO) & (plotting_df["restriction_type"] == "count")
     ]["max_bound"]
     max_vals_3 = plotting_df[
-        (plotting_df["step"] == 2999)
+        (plotting_df["step"] == STEP_TWO)
         & (plotting_df["restriction_type"] == "count_plus")
     ]["max_bound"]
 
     min_vals_1 = plotting_df[
-        (plotting_df["step"] == 2999)
+        (plotting_df["step"] == STEP_TWO)
         & (plotting_df["restriction_type"] == "count_minus")
     ]["min_bound"]
     min_vals_2 = plotting_df[
-        (plotting_df["step"] == 2999) & (plotting_df["restriction_type"] == "count")
+        (plotting_df["step"] == STEP_TWO) & (plotting_df["restriction_type"] == "count")
     ]["min_bound"]
     min_vals_3 = plotting_df[
-        (plotting_df["step"] == 2999)
+        (plotting_df["step"] == STEP_TWO)
         & (plotting_df["restriction_type"] == "count_plus")
     ]["min_bound"]
     # Experiment 4
@@ -422,19 +423,19 @@ def generate_cov_plots(base_path: str, timestamp: str, ax):
     plotting_df = pd.read_csv(os.path.join(base_path, timestamp, "plotting_df.csv"))
 
     max_vals_cov = plotting_df[
-        (plotting_df["step"] == 2999)
+        (plotting_df["step"] == STEP)
         & (plotting_df["restriction_type"] == "cov_positive")
     ]["max_bound"]
     max_vals_count = plotting_df[
-        (plotting_df["step"] == 2999) & (plotting_df["restriction_type"] == "count")
+        (plotting_df["step"] == STEP) & (plotting_df["restriction_type"] == "count")
     ]["max_bound"]
 
     min_vals_cov = plotting_df[
-        (plotting_df["step"] == 2999)
+        (plotting_df["step"] == STEP)
         & (plotting_df["restriction_type"] == "cov_positive")
     ]["min_bound"]
     min_vals_count = plotting_df[
-        (plotting_df["step"] == 2999) & (plotting_df["restriction_type"] == "count")
+        (plotting_df["step"] == STEP) & (plotting_df["restriction_type"] == "count")
     ]["min_bound"]
 
     # Cov

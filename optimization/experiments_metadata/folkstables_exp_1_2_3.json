@@ -14,16 +14,15 @@
         "MIL",
         "NATIVITY",
         "DIS",
+        "PINCP",
         "SEX"
     ],
     "states": [
         "AL"
     ],
     "n_trials": 1,
-    "n_optim_iters": 3000,
-    "restriction_trials": [
-        "DRO_worst_case",
-        "DRO",
+    "n_optim_iters": 3500,
+    "restriction_trials": [ 
         "count"
     ],
     "matrix_types": [

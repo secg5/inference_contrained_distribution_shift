@@ -116,22 +116,43 @@ def get_feature_weights(
         for level in levels:
             number_strata *= len(level)
 
-        degrees_of_freedom = len(levels[1]) * len(levels[2]) * len(levels[3])
+        degrees_of_freedom = len(levels[1]) * len(levels[2])
 
         if matrix_type == "Nx12":
             feature_weights = torch.eye(number_strata)
             return feature_weights
+        # elif matrix_type == "Nx10":
+        #     idx = 0
+        #     idj = 0
+        #     idm = 0
+        #     feature_weights = torch.zeros(number_strata, degrees_of_freedom *2*2)
+        #     starting_tuple = (levels[0][0], levels[1][0], levels[2][0], levels[3][0])
+        #     previous_tuple = starting_tuple
+        #     for combination in traverse_level_combinations(levels):
+        #         current_tuple = (combination[0], combination[1], combination[2], combination[3])
+        #         if previous_tuple != current_tuple:
+        #             if current_tuple == starting_tuple:
+        #                 idj = 0
+        #             else:
+        #                 idj += 1
+
+        #         weight = [0] * degrees_of_freedom*2*2
+        #         weight[idj] = 1
+        #         feature_weights[idx] = torch.tensor(weight).float()
+        #         idx += 1
+        #         previous_tuple = current_tuple
+        #     return feature_weights
         elif matrix_type == "Nx8":
             idx = 0
             idj = 0
             idm = 0
             feature_weights = torch.zeros(number_strata, degrees_of_freedom + 2)
-            starting_tuple = (levels[1][0], levels[2][0], levels[3][0])
+            starting_tuple = (levels[1][0], levels[2][0])
             previous_tuple = starting_tuple
             starting_feature = "white"
             previous_feature = starting_feature
             for combination in traverse_level_combinations(levels):
-                current_tuple = (combination[1], combination[2], combination[3])
+                current_tuple = (combination[1], combination[2])
                 current_feature = combination[0]
                 if previous_tuple != current_tuple:
                     if current_tuple == starting_tuple:
@@ -158,10 +179,11 @@ def get_feature_weights(
             idx = 0
             idj = 0
             feature_weights = torch.zeros(number_strata, degrees_of_freedom)
-            starting_tuple = (levels[1][0], levels[2][0], levels[3][0])
+            starting_tuple = (levels[1][0], levels[2][0])
+            print(starting_tuple)
             previous_tuple = starting_tuple
             for combination in traverse_level_combinations(levels):
-                current_tuple = (combination[1], combination[2], combination[3])
+                current_tuple = (combination[1], combination[2])
                 if previous_tuple != current_tuple:
                     if current_tuple == starting_tuple:
                         idj = 0
@@ -410,6 +432,18 @@ def build_strata_counts_matrix(
     data_count_0 = counts.select(-2, 0)
     data_count_1 = counts.select(-2, 1)
 
+    features_0 = []
+    features_1 = []
+
+    for i in range(feature_weights.shape[0]):
+        if i % 4 == 0 or i % 4 == 1:
+            features_0.append(feature_weights[i])
+        else:
+            features_1.append(feature_weights[i])
+
+    features_0 = torch.stack(features_0)
+    features_1 = torch.stack(features_1)
+    
     # for level in range(2):
     #     t = data_count_0[level].flatten().unsqueeze(1)
     #     features = feature_weights[level * t.shape[0] : (level + 1) * t.shape[0]]
@@ -424,13 +458,15 @@ def build_strata_counts_matrix(
     y_1_treatment = torch.zeros(level_size, features_n)
 
     for level in range(level_size):
-        t = data_count_0.select(-1, level).flatten().unsqueeze(1)
-        features = feature_weights[level::2]
+        t = data_count_0.select(-1, level)
+        t  = t.sum(axis=0).flatten().unsqueeze(1)        
+        features = features_0[level::2]
         y_0_treatment[level] = (features * t).sum(dim=0)
 
     for level in range(level_size):
-        t_ = data_count_1.select(-1, level).flatten().unsqueeze(1)
-        features_ = feature_weights[level::2]
+        t_ = data_count_1.select(-1, level)
+        t_ = t_.sum(axis=0).flatten().unsqueeze(1)
+        features_ = features_1[level::2]
         y_1_treatment[level] = (features_ * t_).sum(dim=0)
  
     return y_0_treatment.numpy(), y_1_treatment.numpy()
@@ -473,7 +509,7 @@ def build_strata_counts_matrix_outcome(
 
     for level in range(level_size):
         t_ = data_count_1[level].flatten().unsqueeze(1)
-        features_ = feature_weights[level * t.shape[0] : (level + 1) * t.shape[0]]
+        features_ = feature_weights[level * t_.shape[0] : (level + 1) * t_.shape[0]]
         y_1_treatment[level] = (features_ * t_).sum(dim=0)
     
     return y_0_treatment.numpy(), y_1_treatment.numpy()
@@ -534,6 +570,7 @@ def get_restrictions(
             A_dict["count_plus"][0] @ w == restriction_values["count_plus"][0],
             A_dict["count_plus"][1] @ w == restriction_values["count_plus"][1],
             A_dict["count_plus"][2] @ w == restriction_values["count_plus"][2],
+            A_dict["count_plus"][3] @ w == restriction_values["count_plus"][3],
         ]
     elif restriction_type == "cov_positive":
         for cov_pair in A_dict["cov"]:

@@ -14,20 +14,21 @@
         "MIL",
         "NATIVITY",
         "DIS",
+        "PINCP",
         "SEX"
     ],
     "states": [
         "AL"
     ],
     "n_trials": 1,
-    "n_optim_iters": 3000,
+    "n_optim_iters": 5000,
     "restriction_trials": [
         "count_minus",
         "count",
         "count_plus"
     ],
     "matrix_types": [
-        "Nx6"
+        "Nx12"
     ],
     "statistic": "conditional_mean"
 }
