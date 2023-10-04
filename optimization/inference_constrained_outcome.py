@@ -260,21 +260,6 @@ def get_count_restrictions(
 
     return restriction_00, restriction_01
 
-def get_count_restrictions_y(
-    data: pd.DataFrame, target: str, treatment_level: List[str]
-) -> Tuple[np.ndarray, np.ndarray]:
-    # import pdb; pdb.set_trace()
-    y00_val_1 = sum((data[target] == 0) & (data[treatment_level[0]] == 1))
-    y01_val_1 = sum((data[target] == 1) & (data[treatment_level[0]] == 1))
-
-    y00_val_2 = sum((data[target] == 0) & (data[treatment_level[1]] == 1))
-    y01_val_2 = sum((data[target] == 1) & (data[treatment_level[1]] == 1))
-
-    restriction_00 = np.array([y00_val_1, y00_val_2])
-    restriction_01 = np.array([y01_val_1, y01_val_2])
-
-    return restriction_00, restriction_01
-
 
 def compute_f_divergence(p, q, type="chi2"):
     if type == "chi2":
@@ -433,49 +418,6 @@ def build_strata_counts_matrix(
         features_ = feature_weights[level::2]
         y_1_treatment[level] = (features_ * t_).sum(dim=0)
  
-    return y_0_treatment.numpy(), y_1_treatment.numpy()
-
-def build_strata_counts_matrix_outcome(
-    feature_weights: torch.Tensor, counts: torch.Tensor, treatment_level: List[str],
-    treatment_level_restriction: List[str] = ['SCHL_0', 'SCHL_1']):
-    """Builds linear restrictions for a convex optimization problem, according to
-    a specific restrictions parameterization. This is the phi parametrization described
-    in the paper.
-
-    This method build a Matrix full of counts by combination of strata.
-    It will return two matrixes each one associated to the idividuals
-    with y=0 or y=1:
-
-    A_1 (a_{ij}), a_{ij} is the number of observations in the dataset
-    such that y=1 x_i = 1 and x_j =1.
-
-    A_0 (a_{ij}), a_{ij} is the number of observations in the dataset
-    such that y=1 x_i = 1 and x_j =1.
-
-    Note that unlike i, j is fixed, in the code outside this method
-    varies trough female and male.
-
-    returns A_0, A_1
-    """
-    _, features_n = feature_weights.shape
-    level_size = len(treatment_level)
-
-    y_0_treatment = torch.zeros(level_size, features_n)
-    y_1_treatment = torch.zeros(level_size, features_n)
-
-    data_count_0 = counts[0]
-    data_count_1 = counts[1]
-
-    for level in range(2):
-        t = data_count_0[level].flatten().unsqueeze(1)
-        features = feature_weights[level * t.shape[0] : (level + 1) * t.shape[0]]
-        y_0_treatment[level] = (features * t).sum(dim=0)
-
-    for level in range(level_size):
-        t_ = data_count_1[level].flatten().unsqueeze(1)
-        features_ = feature_weights[level * t.shape[0] : (level + 1) * t.shape[0]]
-        y_1_treatment[level] = (features_ * t_).sum(dim=0)
-    
     return y_0_treatment.numpy(), y_1_treatment.numpy()
 
 
@@ -712,16 +654,16 @@ if __name__ == "__main__":
                 target=treatment_level_restriction_2,
                 treatment_level=treatment_level_restriction,
             ),
-            "count_plus": get_count_restrictions(
-                data=dataset.population_df_colinear,
-                target=treatment_level_restriction_2,
-                treatment_level=treatment_level_restriction,
-            )
-            +   get_count_restrictions_y(
-                data=dataset.population_df_colinear,
-                target=dataset.target,
-                treatment_level=treatment_level,
-            ),
+            # "count_plus": get_count_restrictions(
+            #     data=dataset.population_df_colinear,
+            #     target=treatment_level_restriction_2,
+            #     treatment_level=treatment_level_restriction,
+            # )
+            # + get_count_restrictions(
+            #     data=dataset.population_df_colinear,
+            #     target=dataset.alternate_outcome,
+            #     treatment_level=treatment_level_restriction,
+            # ),
         }
 
         if config.n_cov_pairs and restriction_type.startswith("cov"):
@@ -786,17 +728,17 @@ if __name__ == "__main__":
         )
         A_dict = {
             "count": build_strata_counts_matrix(
-                feature_weights, strata_estimands["count"], treatment_level_restriction
+                feature_weights, strata_estimands["count"], treatment_level
             ),
             "count_minus": build_strata_counts_matrix(
-                feature_weights, strata_estimands["count"], treatment_level_restriction
+                feature_weights, strata_estimands["count"], treatment_level
             ),
-            "count_plus": build_strata_counts_matrix(
-                feature_weights, strata_estimands["count"], treatment_level_restriction
-            )
-            + build_strata_counts_matrix_outcome(
-                feature_weights, strata_estimands["count_plus"], treatment_level
-            ),
+            # "count_plus": build_strata_counts_matrix(
+            #     feature_weights, strata_estimands["count"], treatment_level
+            # )
+            # + build_strata_counts_matrix(
+            #     feature_weights, strata_estimands["count_plus"], treatment_level
+            # ),
         }
 
         if config.n_cov_pairs and restriction_type.startswith("cov"):
