@@ -1,32 +1,33 @@
 {
     "random_seeds": [
-        0
+        0,
+        1,
+        2,
+        3,
+        4
     ],
     "dataset_type": "folktables",
     "correlation_coeff": 1,
     "dataset_size": null,
     "feature_names": [
         "CIT",
-        "MIG",
+        "MIL",
         "NATIVITY",
         "DIS",
+        "PINCP",
         "SEX"
     ],
     "states": [
         "AL"
     ],
     "n_trials": 1,
-    "n_optim_iters": 3000,
+    "n_optim_iters": 5000,
     "restriction_trials": [
         "cov_positive",
-        "count",
-        "count_plus",
-        "count_minus"
+        "count"
     ],
     "matrix_types": [
-        "Nx6",
-        "Nx8",
-        "Nx12"
+        "Nx6"
     ],
     "statistic": "conditional_mean",
     "n_cov_pairs": 1

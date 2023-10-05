@@ -22,7 +22,9 @@
     ],
     "n_trials": 1,
     "n_optim_iters": 3500,
-    "restriction_trials": [ 
+    "restriction_trials": [
+        "DRO_worst_case",
+        "DRO",
         "count"
     ],
     "matrix_types": [
