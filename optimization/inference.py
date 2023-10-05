@@ -180,7 +180,7 @@ def get_feature_weights(
             idj = 0
             feature_weights = torch.zeros(number_strata, degrees_of_freedom)
             starting_tuple = (levels[1][0], levels[2][0])
-            print(starting_tuple)
+            # print(starting_tuple)
             previous_tuple = starting_tuple
             for combination in traverse_level_combinations(levels):
                 current_tuple = (combination[1], combination[2])
@@ -232,9 +232,9 @@ def get_strata_counts(
             strata_counts.append(0.00001)
         else:
             strata_counts.append(strata_df.shape[0])
-    
+
     output_shape = [2] + [len(level) for level in levels]
-    
+
     return torch.tensor(strata_counts).reshape(output_shape)
 
 
@@ -282,6 +282,7 @@ def get_count_restrictions(
 
     return restriction_00, restriction_01
 
+
 def get_count_restrictions_y(
     data: pd.DataFrame, target: str, treatment_level: List[str]
 ) -> Tuple[np.ndarray, np.ndarray]:
@@ -303,6 +304,10 @@ def compute_f_divergence(p, q, type="chi2"):
         # return 0.5 * torch.sum((p-q)**2/(p+q+1e-8))
         numerator = (p - q) ** 2
         denominator = q + 1e-8
+        # Only include terms where q is non-zero
+        mask = denominator > 1e-7
+        numerator = numerator[mask]
+        denominator = denominator[mask]
         return 0.5 * torch.sum(numerator / denominator)
     else:
         raise ValueError(f"Invalid divergence type {type}.")
@@ -377,33 +382,37 @@ def get_optimized_rho(
     return float(rho.detach().numpy()), loss_values
 
 
-# def get_cov_restrictions(
-#     data: pd.DataFrame,
-#     target: str,
-#     treatment_level: List[str],
-#     all_cov_vars: List[List[str]],
-# ) -> Tuple[np.ndarray, np.ndarray]:
-#     y_00_val_1_df = data[(data[target] == 0) & (data[treatment_level[0]] == 1)]
-#     y_01_val_1_df = data[(data[target] == 1) & (data[treatment_level[0]] == 1)]
-#     y_00_val_2_df = data[(data[target] == 0) & (data[treatment_level[1]] == 1)]
-#     y_01_val_2_df = data[(data[target] == 1) & (data[treatment_level[1]] == 1)]
+def get_cov_restrictions(
+    data: pd.DataFrame,
+    target: str,
+    treatment_level: List[str],
+    all_cov_vars: List[List[str]],
+) -> Tuple[np.ndarray, np.ndarray]:
+    y_00_val_1_df = data[(data[target[0]] == 1) & (data[treatment_level[0]] == 1)]
+    y_01_val_1_df = data[(data[target[1]] == 1) & (data[treatment_level[0]] == 1)]
 
-#     all_cov_restrictions = []
-#     for cov_vars in all_cov_vars:
-#         y_00_val_1 = y_00_val_1_df.cov().loc[*cov_vars]
-#         y_01_val_1 = y_01_val_1_df.cov().loc[*cov_vars]
-#         y_00_val_2 = y_00_val_2_df.cov().loc[*cov_vars]
-#         y_01_val_2 = y_01_val_2_df.cov().loc[*cov_vars]
+    y_00_val_2_df = data[(data[target[0]] == 1) & (data[treatment_level[1]] == 1)]
+    y_01_val_2_df = data[(data[target[1]] == 1) & (data[treatment_level[1]] == 1)]
 
-#         restriction_00 = np.array([y_00_val_1, y_00_val_2])
-#         restriction_01 = np.array([y_01_val_1, y_01_val_2])
-#         all_cov_restrictions.append((restriction_00, restriction_01))
-#     return all_cov_restrictions
+    all_cov_restrictions = []
+    for cov_vars in all_cov_vars:
+        y_00_val_1 = y_00_val_1_df.cov().loc[*cov_vars]
+        y_01_val_1 = y_01_val_1_df.cov().loc[*cov_vars]
+        y_00_val_2 = y_00_val_2_df.cov().loc[*cov_vars]
+        y_01_val_2 = y_01_val_2_df.cov().loc[*cov_vars]
+
+        restriction_00 = np.array([y_00_val_1, y_00_val_2])
+        restriction_01 = np.array([y_01_val_1, y_01_val_2])
+        all_cov_restrictions.append((restriction_00, restriction_01))
+    return all_cov_restrictions
 
 
 def build_strata_counts_matrix(
-    feature_weights: torch.Tensor, counts: torch.Tensor, treatment_level: List[str],
-    treatment_level_restriction: List[str] = ['SCHL_0', 'SCHL_1']):
+    feature_weights: torch.Tensor,
+    counts: torch.Tensor,
+    treatment_level: List[str],
+    treatment_level_restriction: List[str] = ["SCHL_0", "SCHL_1"],
+):
     """Builds linear restrictions for a convex optimization problem, according to
     a specific restrictions parameterization. This is the phi parametrization described
     in the paper.
@@ -443,7 +452,7 @@ def build_strata_counts_matrix(
 
     features_0 = torch.stack(features_0)
     features_1 = torch.stack(features_1)
-    
+
     # for level in range(2):
     #     t = data_count_0[level].flatten().unsqueeze(1)
     #     features = feature_weights[level * t.shape[0] : (level + 1) * t.shape[0]]
@@ -453,13 +462,13 @@ def build_strata_counts_matrix(
     #     t_ = data_count_1[level].flatten().unsqueeze(1)
     #     features_ = feature_weights[level * t.shape[0] : (level + 1) * t.shape[0]]
     #     y_1_treatment[level] = (features_ * t_).sum(dim=0)
-    
+
     y_0_treatment = torch.zeros(level_size, features_n)
     y_1_treatment = torch.zeros(level_size, features_n)
 
     for level in range(level_size):
         t = data_count_0.select(-1, level)
-        t  = t.sum(axis=0).flatten().unsqueeze(1)        
+        t = t.sum(axis=0).flatten().unsqueeze(1)
         features = features_0[level::2]
         y_0_treatment[level] = (features * t).sum(dim=0)
 
@@ -468,12 +477,16 @@ def build_strata_counts_matrix(
         t_ = t_.sum(axis=0).flatten().unsqueeze(1)
         features_ = features_1[level::2]
         y_1_treatment[level] = (features_ * t_).sum(dim=0)
- 
+
     return y_0_treatment.numpy(), y_1_treatment.numpy()
 
+
 def build_strata_counts_matrix_outcome(
-    feature_weights: torch.Tensor, counts: torch.Tensor, treatment_level: List[str],
-    treatment_level_restriction: List[str] = ['SCHL_0', 'SCHL_1']):
+    feature_weights: torch.Tensor,
+    counts: torch.Tensor,
+    treatment_level: List[str],
+    treatment_level_restriction: List[str] = ["SCHL_0", "SCHL_1"],
+):
     """Builds linear restrictions for a convex optimization problem, according to
     a specific restrictions parameterization. This is the phi parametrization described
     in the paper.
@@ -511,7 +524,7 @@ def build_strata_counts_matrix_outcome(
         t_ = data_count_1[level].flatten().unsqueeze(1)
         features_ = feature_weights[level * t_.shape[0] : (level + 1) * t_.shape[0]]
         y_1_treatment[level] = (features_ * t_).sum(dim=0)
-    
+
     return y_0_treatment.numpy(), y_1_treatment.numpy()
 
 
@@ -651,10 +664,10 @@ def run_search(
         weighted_counts_1 = weights_y1 * data_count_1
         weighted_counts_0 = weights_y0 * data_count_0
 
-        #===================================#
+        # ===================================#
         w_counts_1 = weighted_counts_1.select(-1, 1)
         w_counts_0 = weighted_counts_0.select(-1, 1)
-        #===================================#
+        # ===================================#
 
         size = w_counts_1.sum() + w_counts_0.sum()
         conditional_mean = w_counts_1.sum() / size
@@ -720,10 +733,10 @@ if __name__ == "__main__":
             treatment_level = dataset.levels_colinear[0]
             treatment_level_restriction = dataset.levels_colinear[-1]
             treatment_level_restriction_2 = dataset.levels_colinear[-2]
-            print("treatment_level_restriction", treatment_level_restriction)
-            print("treatment_level_restriction_2", treatment_level_restriction_2)
+            # print("treatment_level_restriction", treatment_level_restriction)
+            # print("treatment_level_restriction_2", treatment_level_restriction_2)
 
-            print("levles", dataset.levels_colinear)
+            # print("levles", dataset.levels_colinear)
             dataset_size = dataset.population_df_colinear.shape[0]
             sample_size = dataset.sample_df_colinear.shape[0]
         else:
@@ -736,8 +749,7 @@ if __name__ == "__main__":
                 treatment_level=treatment_level,
                 mode=restriction_type.split("_")[-1],
             )
-
-        
+            print(all_cov_vars)
         restriction_values = {
             "count": get_count_restrictions(
                 data=dataset.population_df_colinear,
@@ -754,7 +766,7 @@ if __name__ == "__main__":
                 target=treatment_level_restriction_2,
                 treatment_level=treatment_level_restriction,
             )
-            +   get_count_restrictions_y(
+            + get_count_restrictions_y(
                 data=dataset.population_df_colinear,
                 target=dataset.target,
                 treatment_level=treatment_level,
@@ -764,8 +776,8 @@ if __name__ == "__main__":
         if config.n_cov_pairs and restriction_type.startswith("cov"):
             restriction_values["cov"] = get_cov_restrictions(
                 data=dataset.population_df_colinear,
-                target=dataset.target,
-                treatment_level=treatment_level,
+                target=treatment_level_restriction_2,
+                treatment_level=treatment_level_restriction,
                 all_cov_vars=all_cov_vars,
             )
 
@@ -802,7 +814,7 @@ if __name__ == "__main__":
                 strata_dfs=strata_dfs_alternate_outcome, levels=dataset.levels_colinear
             ),
         }
-        print("levels_colinear", dataset.levels_colinear)
+        # print("levels_colinear", dataset.levels_colinear)
         if config.n_cov_pairs and restriction_type.startswith("cov"):
             strata_estimands["cov"] = get_strata_covs(
                 strata_dfs=strata_dfs,
