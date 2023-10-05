@@ -1,15 +1,17 @@
 {
-    "random_seed": 1234,
+    "random_seeds": [
+        0
+
+    ],
     "dataset_type": "folktables",
     "correlation_coeff": 1,
-    "dataset_size": 25000,
+    "dataset_size": null,
     "feature_names": [
+        "CIT",
         "MIL",
-        "ANC",
         "NATIVITY",
-        "DEAR",
-        "DEYE",
-        "DREM",
+        "DIS",
+        "PINCP",
         "SEX"
     ],
     "states": ["AL"],

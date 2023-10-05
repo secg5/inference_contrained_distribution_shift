@@ -3,7 +3,6 @@ import datetime
 import itertools
 import json
 import os
-import pickle
 from typing import Dict, List, Tuple
 
 import cvxpy as cp
@@ -14,6 +13,7 @@ import seaborn as sns
 import torch
 from config import parse_config_dict
 from datasets import FolktablesLoader, SimulationLoader
+from sklearn.linear_model import LinearRegression, LogisticRegression
 from torch.linalg import lstsq
 from tqdm import tqdm
 
@@ -93,11 +93,12 @@ def get_feature_weights(
             raise ValueError(
                 f"Invalid feature matrix type {matrix_type} for simulated dataset."
             )
-
     elif dataset_type == "folktables":
         number_strata = 1
         for level in levels:
             number_strata *= len(level)
+
+        degrees_of_freedom = len(levels[1]) * len(levels[2])
 
         if matrix_type == "Nx12":
             feature_weights = torch.eye(number_strata)
@@ -108,19 +109,38 @@ def get_feature_weights(
                 hash_map[combination] = idx
                 idx += 1
             return feature_weights, hash_map
+        # elif matrix_type == "Nx10":
+        #     idx = 0
+        #     idj = 0
+        #     idm = 0
+        #     feature_weights = torch.zeros(number_strata, degrees_of_freedom *2*2)
+        #     starting_tuple = (levels[0][0], levels[1][0], levels[2][0], levels[3][0])
+        #     previous_tuple = starting_tuple
+        #     for combination in traverse_level_combinations(levels):
+        #         current_tuple = (combination[0], combination[1], combination[2], combination[3])
+        #         if previous_tuple != current_tuple:
+        #             if current_tuple == starting_tuple:
+        #                 idj = 0
+        #             else:
+        #                 idj += 1
 
+        #         weight = [0] * degrees_of_freedom*2*2
+        #         weight[idj] = 1
+        #         feature_weights[idx] = torch.tensor(weight).float()
+        #         idx += 1
+        #         previous_tuple = current_tuple
+        #     return feature_weights
         elif matrix_type == "Nx8":
-            degrees_of_freedom = len(levels[1]) * len(levels[2]) * len(levels[3])
             idx = 0
             idj = 0
             idm = 0
             feature_weights = torch.zeros(number_strata, degrees_of_freedom + 2)
-            starting_tuple = (levels[1][0], levels[2][0], levels[3][0])
+            starting_tuple = (levels[1][0], levels[2][0])
             previous_tuple = starting_tuple
             starting_feature = "white"
             previous_feature = starting_feature
-            for combination in traverse_combinations(levels):
-                current_tuple = (combination[1], combination[2], combination[3])
+            for combination in traverse_level_combinations(levels):
+                current_tuple = (combination[1], combination[2])
                 current_feature = combination[0]
                 if previous_tuple != current_tuple:
                     if current_tuple == starting_tuple:
@@ -144,14 +164,14 @@ def get_feature_weights(
             return feature_weights
 
         elif matrix_type == "Nx6":
-            degrees_of_freedom = len(levels[1]) * len(levels[2])
             idx = 0
             idj = 0
             feature_weights = torch.zeros(number_strata, degrees_of_freedom)
             starting_tuple = (levels[1][0], levels[2][0])
+            # print(starting_tuple)
             previous_tuple = starting_tuple
             hash_map = {}
-            for combination in traverse_combinations(levels):
+            for combination in traverse_level_combinations(levels):
                 current_tuple = (combination[1], combination[2])
                 if previous_tuple != current_tuple:
                     if current_tuple == starting_tuple:
@@ -192,7 +212,7 @@ def create_features_tensor(data):
     features = features.to_numpy().astype(np.double)
     features = np.concatenate([features, np.ones((features.shape[0], 1))], axis=-1)
     features_tensor = torch.tensor(features).float()
-    target = torch.tensor(data["Creditability"], dtype=torch.long).float()
+    target = torch.tensor(data["Creditability"].to_numpy(), dtype=torch.long).float()
     target = torch.unsqueeze(target, -1)
     return features_tensor, target
 
@@ -256,6 +276,23 @@ def get_strata_covs(
 def get_count_restrictions(
     data: pd.DataFrame, target: str, treatment_level: List[str]
 ) -> Tuple[np.ndarray, np.ndarray]:
+    # import pdb; pdb.set_trace()
+    y00_val_1 = sum((data[target[0]] == 1) & (data[treatment_level[0]] == 1))
+    y01_val_1 = sum((data[target[1]] == 1) & (data[treatment_level[0]] == 1))
+
+    y00_val_2 = sum((data[target[0]] == 1) & (data[treatment_level[1]] == 1))
+    y01_val_2 = sum((data[target[1]] == 1) & (data[treatment_level[1]] == 1))
+
+    restriction_00 = np.array([y00_val_1, y00_val_2])
+    restriction_01 = np.array([y01_val_1, y01_val_2])
+
+    return restriction_00, restriction_01
+
+
+def get_count_restrictions_y(
+    data: pd.DataFrame, target: str, treatment_level: List[str]
+) -> Tuple[np.ndarray, np.ndarray]:
+    # import pdb; pdb.set_trace()
     y00_val_1 = sum((data[target] == 0) & (data[treatment_level[0]] == 1))
     y01_val_1 = sum((data[target] == 1) & (data[treatment_level[0]] == 1))
 
@@ -271,7 +308,13 @@ def get_count_restrictions(
 def compute_f_divergence(p, q, type="chi2"):
     if type == "chi2":
         # return 0.5 * torch.sum((p-q)**2/(p+q+1e-8))
-        return 0.5 * torch.sum((p - q) ** 2 / (q + 1e-8))
+        numerator = (p - q) ** 2
+        denominator = q + 1e-8
+        # Only include terms where q is non-zero
+        mask = denominator > 1e-7
+        numerator = numerator[mask]
+        denominator = denominator[mask]
+        return 0.5 * torch.sum(numerator / denominator)
     else:
         raise ValueError(f"Invalid divergence type {type}.")
 
@@ -307,7 +350,10 @@ def get_cov_restrictions(
 
 
 def build_strata_counts_matrix(
-    feature_weights: torch.Tensor, counts: torch.Tensor, treatment_level: List[str]
+    feature_weights: torch.Tensor,
+    counts: torch.Tensor,
+    treatment_level: List[str],
+    treatment_level_restriction: List[str] = ["SCHL_0", "SCHL_1"],
 ):
     """Builds linear restrictions for a convex optimization problem, according to
     a specific restrictions parameterization. This is the phi parametrization described
@@ -328,26 +374,100 @@ def build_strata_counts_matrix(
 
     returns A_0, A_1
     """
-    _, features = feature_weights.shape
+    _, features_n = feature_weights.shape
     level_size = len(treatment_level)
 
-    y_0_ground_truth = torch.zeros(level_size, features)
-    y_1_ground_truth = torch.zeros(level_size, features)
+    # y_0_treatment = torch.zeros(level_size, features_n)
+    # y_1_treatment = torch.zeros(level_size, features_n)
+
+    data_count_0 = counts.select(-2, 0)
+    data_count_1 = counts.select(-2, 1)
+
+    features_0 = []
+    features_1 = []
+
+    for i in range(feature_weights.shape[0]):
+        if i % 4 == 0 or i % 4 == 1:
+            features_0.append(feature_weights[i])
+        else:
+            features_1.append(feature_weights[i])
+
+    features_0 = torch.stack(features_0)
+    features_1 = torch.stack(features_1)
+
+    # for level in range(2):
+    #     t = data_count_0[level].flatten().unsqueeze(1)
+    #     features = feature_weights[level * t.shape[0] : (level + 1) * t.shape[0]]
+    #     y_0_treatment[level] = (features * t).sum(dim=0)
+
+    # for level in range(level_size):
+    #     t_ = data_count_1[level].flatten().unsqueeze(1)
+    #     features_ = feature_weights[level * t.shape[0] : (level + 1) * t.shape[0]]
+    #     y_1_treatment[level] = (features_ * t_).sum(dim=0)
+
+    y_0_treatment = torch.zeros(level_size, features_n)
+    y_1_treatment = torch.zeros(level_size, features_n)
+
+    for level in range(level_size):
+        t = data_count_0.select(-1, level)
+        t = t.sum(axis=0).flatten().unsqueeze(1)
+        features = features_0[level::2]
+        y_0_treatment[level] = (features * t).sum(dim=0)
+
+    for level in range(level_size):
+        t_ = data_count_1.select(-1, level)
+        t_ = t_.sum(axis=0).flatten().unsqueeze(1)
+        features_ = features_1[level::2]
+        y_1_treatment[level] = (features_ * t_).sum(dim=0)
+
+    return y_0_treatment.numpy(), y_1_treatment.numpy()
+
+
+def build_strata_counts_matrix_outcome(
+    feature_weights: torch.Tensor,
+    counts: torch.Tensor,
+    treatment_level: List[str],
+    treatment_level_restriction: List[str] = ["SCHL_0", "SCHL_1"],
+):
+    """Builds linear restrictions for a convex optimization problem, according to
+    a specific restrictions parameterization. This is the phi parametrization described
+    in the paper.
+
+    This method build a Matrix full of counts by combination of strata.
+    It will return two matrixes each one associated to the idividuals
+    with y=0 or y=1:
+
+    A_1 (a_{ij}), a_{ij} is the number of observations in the dataset
+    such that y=1 x_i = 1 and x_j =1.
+
+    A_0 (a_{ij}), a_{ij} is the number of observations in the dataset
+    such that y=1 x_i = 1 and x_j =1.
+
+    Note that unlike i, j is fixed, in the code outside this method
+    varies trough female and male.
+
+    returns A_0, A_1
+    """
+    _, features_n = feature_weights.shape
+    level_size = len(treatment_level)
+
+    y_0_treatment = torch.zeros(level_size, features_n)
+    y_1_treatment = torch.zeros(level_size, features_n)
 
     data_count_0 = counts[0]
     data_count_1 = counts[1]
 
-    for level in range(level_size):
+    for level in range(2):
         t = data_count_0[level].flatten().unsqueeze(1)
         features = feature_weights[level * t.shape[0] : (level + 1) * t.shape[0]]
-        y_0_ground_truth[level] = (features * t).sum(dim=0)
+        y_0_treatment[level] = (features * t).sum(dim=0)
 
     for level in range(level_size):
         t_ = data_count_1[level].flatten().unsqueeze(1)
-        features_ = feature_weights[level * t.shape[0] : (level + 1) * t.shape[0]]
-        y_1_ground_truth[level] = (features_ * t_).sum(dim=0)
+        features_ = feature_weights[level * t_.shape[0] : (level + 1) * t_.shape[0]]
+        y_1_treatment[level] = (features_ * t_).sum(dim=0)
 
-    return y_0_ground_truth.numpy(), y_1_ground_truth.numpy()
+    return y_0_treatment.numpy(), y_1_treatment.numpy()
 
 
 def build_strata_covs_matrix(
@@ -415,11 +535,12 @@ def get_restrictions(
     restriction_values,
     n_sample,
     dataset_size,
-    rho,
     ratio,
     q,
+    rho=None,
 ):
     restrictions = [feature_weights @ w >= n_sample / dataset_size]
+    # import pdb; pdb.set_trace()
     if restriction_type == "count":
         restrictions += [
             A_dict["count"][0] @ w == restriction_values["count"][0],
@@ -433,24 +554,22 @@ def get_restrictions(
         restrictions += [
             A_dict["count_plus"][0] @ w == restriction_values["count_plus"][0],
             A_dict["count_plus"][1] @ w == restriction_values["count_plus"][1],
+            A_dict["count_plus"][2] @ w == restriction_values["count_plus"][2],
             A_dict["count_plus"][3] @ w == restriction_values["count_plus"][3],
         ]
     elif restriction_type == "cov_positive":
-        restrictions += [
-            A_dict["cov"][0] @ w >= 0,
-            A_dict["cov"][1] @ w >= 0,
-        ]
+        for cov_pair in A_dict["cov"]:
+            restrictions += [cov_pair[0] @ w >= 0, cov_pair[1] @ w >= 0]
     elif restriction_type == "cov_negative":
-        restrictions += [
-            A_dict["cov"][0] @ w <= 0,
-            A_dict["cov"][1] @ w <= 0,
-        ]
+        for cov_pair in A_dict["cov"]:
+            restrictions += [cov_pair[0] @ w <= 0, cov_pair[1] @ w <= 0]
     elif restriction_type == "cov_strict":
-        restrictions += [
-            A_dict["cov"][0] @ w == restriction_values["cov"][0],
-            A_dict["cov"][1] @ w == restriction_values["cov"][1],
-        ]
-    elif restriction_type == "DRO":
+        for cov_pair, restriction_pair in zip(A_dict["cov"], restriction_values["cov"]):
+            restrictions += [
+                cov_pair[0] @ w >= restriction_pair[0],
+                cov_pair[1] @ w >= restriction_pair[1],
+            ]
+    elif restriction_type == "DRO" or restriction_type == "DRO_worst_case":
         chi_square_divergence = cp.multiply((ratio - 1) ** 2, q)
         restrictions += [0.5 * cp.sum(chi_square_divergence) <= rho]
     else:
@@ -579,199 +698,250 @@ if __name__ == "__main__":
     config_dict = read_json(args.config)
     config = parse_config_dict(config_dict)
 
-    rng = np.random.default_rng(config.random_seed)
-    if config.dataset_type == "simulation":
-        data_loader = SimulationLoader(
-            dataset_size=config.dataset_size,
-            correlation_coeff=config.correlation_coeff,
-            rng=rng,
-        )
-        dataset = data_loader.load()
-        treatment_level = dataset.levels_colinear[0]
-        dataset_size = dataset.population_df.shape[0]
-        sample_size = dataset.sample_df.shape[0]
-    elif config.dataset_type == "folktables":
-        data_loader = FolktablesLoader(
-            rng=rng,
-            states=config.states,
-            feature_names=config.feature_names,
-            size=config.dataset_size,
-        )
-        dataset = data_loader.load()
-        treatment_level = dataset.levels_colinear[0]
-        dataset_size = dataset.population_df.shape[0]
-        sample_size = dataset.sample_df.shape[0]
-
-    restriction_values = {
-        "count": get_count_restrictions(
-            data=dataset.population_df_colinear,
-            target=dataset.target,
-            treatment_level=treatment_level,
-        ),
-        "count_minus": get_count_restrictions(
-            data=dataset.population_df_colinear,
-            target=dataset.target,
-            treatment_level=treatment_level,
-        ),
-        "count_plus": get_count_restrictions(
-            data=dataset.population_df_colinear,
-            target=dataset.target,
-            treatment_level=treatment_level,
-        )
-        + get_count_restrictions(
-            data=dataset.population_df_colinear,
-            target=dataset.alternate_outcome,
-            treatment_level=treatment_level,
-        ),
-        "cov": get_cov_restrictions(
-            data=dataset.population_df_colinear,
-            target=dataset.target,
-            treatment_level=treatment_level,
-            cov_vars=config.cov_vars,
-        ),
-    }
-
-    feature_means = {
-        config.cov_vars[0]: dataset.population_df_colinear[config.cov_vars[0]].mean(),
-        config.cov_vars[1]: dataset.population_df_colinear[config.cov_vars[1]].mean(),
-    }
-
-    strata_dfs = get_feature_strata(
-        df=dataset.sample_df_colinear,
-        levels=dataset.levels_colinear,
-        target=dataset.target,
-    )
-    strata_dfs_alternate_outcome = get_feature_strata(
-        df=dataset.sample_df_colinear,
-        levels=dataset.levels_colinear,
-        target=dataset.alternate_outcome,
-    )
-    strata_dfs_population = get_feature_strata(
-        df=dataset.population_df_colinear,
-        levels=dataset.levels_colinear,
-        target=dataset.target,
-    )
-
-    strata_estimands = {
-        "count": get_strata_counts(
-            strata_dfs=strata_dfs, levels=dataset.levels_colinear
-        ),
-        "count_plus": get_strata_counts(
-            strata_dfs=strata_dfs_alternate_outcome, levels=dataset.levels_colinear
-        ),
-        "cov": get_strata_covs(
-            strata_dfs=strata_dfs,
-            levels=dataset.levels_colinear,
-            feature_means=feature_means,
-        ),
-    }
-
-    statistic = config.statistic
-    if statistic not in ["regression", "logistic_regression"]:
-        raise ValueError(
-            f"Invalid statistic {statistic}. Must be regression or logistic_regression."
-        )
-
-    features_tensor, target = create_features_tensor(dataset.sample_df)
-    strata_estimands["features_tensor"] = features_tensor
-    strata_estimands["target"] = target
-
-    strata_estimands_population = {
-        "DRO": get_strata_counts(
-            strata_dfs=strata_dfs_population, levels=dataset.levels_colinear
-        )
-    }
-
-    rho = compute_f_divergence(
-        strata_estimands_population["DRO"] / dataset_size,
-        strata_estimands["count"] / sample_size,
-        type="chi2",
-    )
-    print("rho: ", rho)
+    plotting_dfs = []
     c_time = datetime.datetime.now()
     timestamp = str(c_time.strftime("%b%d-%H%M"))
-    plotting_dfs = []
+    if not os.path.exists(os.path.join("..", "experiment_artifacts", timestamp)):
+        os.makedirs(os.path.join("..", "experiment_artifacts", timestamp))
 
-    for matrix_type in tqdm(config.matrix_types, desc="Matrix Type"):
+    param_combinations = list(
+        itertools.product(
+            config.matrix_types, config.restriction_trials, config.random_seeds
+        )
+    )
+
+    for matrix_type, restriction_type, random_seed in tqdm(
+        param_combinations, desc="Param Combinations"
+    ):
+        rng = np.random.default_rng(random_seed)
+        if config.dataset_type == "simulation":
+            data_loader = SimulationLoader(
+                dataset_size=config.dataset_size,
+                correlation_coeff=config.correlation_coeff,
+                rng=rng,
+            )
+            dataset = data_loader.load()
+            treatment_level = dataset.levels_colinear[0]
+            dataset_size = dataset.population_df.shape[0]
+            sample_size = dataset.sample_df.shape[0]
+        elif config.dataset_type == "folktables":
+            data_loader = FolktablesLoader(
+                rng=rng,
+                states=config.states,
+                feature_names=config.feature_names,
+                size=config.dataset_size,
+            )
+            dataset = data_loader.load()
+            treatment_level = dataset.levels_colinear[0]
+            treatment_level_restriction = dataset.levels_colinear[-1]
+            treatment_level_restriction_2 = dataset.levels_colinear[-2]
+            dataset_size = dataset.population_df.shape[0]
+            sample_size = dataset.sample_df.shape[0]
+        else:
+            raise ValueError(f"Invalid dataset type {config.dataset_type}.")
+
+        restriction_values = {
+            "count": get_count_restrictions(
+                data=dataset.population_df_colinear,
+                target=treatment_level_restriction_2,
+                treatment_level=treatment_level_restriction,
+            ),
+            "count_minus": get_count_restrictions(
+                data=dataset.population_df_colinear,
+                target=treatment_level_restriction_2,
+                treatment_level=treatment_level_restriction,
+            ),
+            "count_plus": get_count_restrictions(
+                data=dataset.population_df_colinear,
+                target=treatment_level_restriction_2,
+                treatment_level=treatment_level_restriction,
+            )
+            + get_count_restrictions_y(
+                data=dataset.population_df_colinear,
+                target=dataset.target,
+                treatment_level=treatment_level,
+            ),
+        }
+
+        strata_dfs = get_feature_strata(
+            df=dataset.sample_df_colinear,
+            levels=dataset.levels_colinear,
+            target=dataset.target,
+        )
+        strata_dfs_alternate_outcome = get_feature_strata(
+            df=dataset.sample_df_colinear,
+            levels=dataset.levels_colinear,
+            target=dataset.alternate_outcome,
+        )
+        strata_dfs_population = get_feature_strata(
+            df=dataset.population_df_colinear,
+            levels=dataset.levels_colinear,
+            target=dataset.target,
+        )
+
+        strata_estimands = {
+            "count": get_strata_counts(
+                strata_dfs=strata_dfs, levels=dataset.levels_colinear
+            ),
+            "count_plus": get_strata_counts(
+                strata_dfs=strata_dfs_alternate_outcome, levels=dataset.levels_colinear
+            ),
+        }
+
+        strata_estimands_population = {
+            "DRO": get_strata_counts(
+                strata_dfs=strata_dfs_population, levels=dataset.levels_colinear
+            )
+        }
+
         feature_weights, hash_map = get_feature_weights(
             matrix_type=matrix_type,
             dataset_type=config.dataset_type,
             levels=dataset.levels_colinear,
         )
+
         A_dict = {
             "count": build_strata_counts_matrix(
-                feature_weights, strata_estimands["count"], treatment_level
+                feature_weights, strata_estimands["count"], treatment_level_restriction
             ),
             "count_minus": build_strata_counts_matrix(
-                feature_weights, strata_estimands["count"], treatment_level
+                feature_weights, strata_estimands["count"], treatment_level_restriction
             ),
             "count_plus": build_strata_counts_matrix(
-                feature_weights, strata_estimands["count"], treatment_level
+                feature_weights, strata_estimands["count"], treatment_level_restriction
             )
-            + build_strata_counts_matrix(
+            + build_strata_counts_matrix_outcome(
                 feature_weights, strata_estimands["count_plus"], treatment_level
             ),
-            "cov": build_strata_covs_matrix(
-                feature_weights, strata_estimands["cov"], treatment_level
-            ),
         }
+
+        if restriction_type.startswith("DRO") and matrix_type != "Nx12":
+            continue
+
+        statistic = config.statistic
+        if statistic not in ["regression", "logistic_regression"]:
+            raise ValueError(
+                f"Invalid statistic {statistic}. Must be regression or logistic_regression."
+            )
+
+        features_tensor, target = create_features_tensor(dataset.sample_df)
+        strata_estimands["features_tensor"] = features_tensor
+        strata_estimands["target"] = target
+
+        if restriction_type == "DRO_worst_case":
+            rho, rho_history = get_optimized_rho(
+                A_dict=A_dict,
+                strata_estimands=strata_estimands,
+                feature_weights=feature_weights,
+                restriction_values=restriction_values,
+                n_iters=config.n_optim_iters,
+                restriction_type="count",
+                dataset_size=dataset_size,
+            )
+
+            rho_perfect = compute_f_divergence(
+                strata_estimands_population["DRO"] / dataset_size,
+                strata_estimands["count"] / sample_size,
+                type="chi2",
+            )
+
+            fig, ax = plt.subplots(1, 1, figsize=(10, 5))
+            ax.plot(rho_history)
+            ax.axhline(
+                y=rho_perfect, color="cyan", linestyle="dashed", label="Real Rho"
+            )
+            ax.set_title("Optimized Rho")
+            ax.set_ylabel("Rho")
+            ax.set_xlabel("Iteration")
+            ax.legend()
+            fig.savefig(
+                os.path.join(
+                    "..",
+                    "experiment_artifacts",
+                    timestamp,
+                    f"rho_{random_seed}_{matrix_type}",
+                )
+            )
+        elif restriction_type == "DRO":
+            rho = compute_f_divergence(
+                strata_estimands_population["DRO"] / dataset_size,
+                strata_estimands["count"] / sample_size,
+                type="chi2",
+            )
+        else:
+            rho = None
 
         weights_array = assign_weights(
             dataset.sample_df_colinear, hash_map, feature_weights, matrix_type
         )
 
-        for restriction_idx, restriction_type in tqdm(
-            enumerate(config.restriction_trials),
-            desc="Restrictions",
-            total=len(config.restriction_trials),
-            leave=False,
-        ):
-            if restriction_type == "DRO" and matrix_type != "Nx12":
-                continue
-            statistic = config.statistic
-            for trial_idx in tqdm(range(config.n_trials), desc="Trials", leave=False):
-                max_bound, max_loss_values, alpha_max = run_search(
-                    A_dict=A_dict,
-                    strata_estimands=strata_estimands,
-                    feature_weights=feature_weights,
-                    restriction_values=restriction_values,
-                    upper_bound=True,
-                    n_iters=config.n_optim_iters,
-                    restriction_type=restriction_type,
-                    dataset_size=dataset_size,
-                    rho=rho,
-                    statistic=statistic,
-                    weights_array=weights_array,
-                )
+        X_train_sample = dataset.sample_df.drop("Creditability", axis=1)
+        y_train_sample = dataset.sample_df["Creditability"]
+        X_train_population = dataset.population_df.drop("Creditability", axis=1)
+        y_train_population = dataset.population_df["Creditability"]
+        if statistic == "regression":
+            sample_model = LinearRegression()
+            population_model = LinearRegression()
 
-                min_bound, min_loss_values, alpha_min = run_search(
-                    A_dict=A_dict,
-                    strata_estimands=strata_estimands,
-                    feature_weights=feature_weights,
-                    restriction_values=restriction_values,
-                    upper_bound=False,
-                    n_iters=config.n_optim_iters,
-                    restriction_type=restriction_type,
-                    dataset_size=dataset_size,
-                    rho=rho,
-                    statistic=statistic,
-                    weights_array=weights_array,
+        elif statistic == "logistic_regression":
+            sample_model = LogisticRegression()
+            population_model = LogisticRegression()
+
+        sample_model.fit(X_train_sample, y_train_sample)
+        empirical_coef = sample_model.coef_.flatten()[0]
+
+        population_model.fit(X_train_population, y_train_population)
+        true_coef = population_model.coef_.flatten()[0]
+
+        statistic = config.statistic
+        for trial_idx in tqdm(range(config.n_trials), desc="Trials", leave=False):
+            max_bound, max_loss_values, alpha_max = run_search(
+                A_dict=A_dict,
+                strata_estimands=strata_estimands,
+                feature_weights=feature_weights,
+                restriction_values=restriction_values,
+                upper_bound=True,
+                n_iters=config.n_optim_iters,
+                restriction_type=restriction_type,
+                dataset_size=dataset_size,
+                rho=rho,
+                statistic=statistic,
+                weights_array=weights_array,
+            )
+
+            min_bound, min_loss_values, alpha_min = run_search(
+                A_dict=A_dict,
+                strata_estimands=strata_estimands,
+                feature_weights=feature_weights,
+                restriction_values=restriction_values,
+                upper_bound=False,
+                n_iters=config.n_optim_iters,
+                restriction_type=restriction_type,
+                dataset_size=dataset_size,
+                rho=rho,
+                statistic=statistic,
+                weights_array=weights_array,
+            )
+            # import pdb; pdb.set_trace()
+            plotting_dfs.append(
+                pd.DataFrame(
+                    {
+                        "max_bound": max_bound,
+                        "min_bound": min_bound,
+                        "max_loss": max_loss_values,
+                        "min_loss": min_loss_values,
+                        "restriction_type": restriction_type,
+                        "trial_idx": trial_idx,
+                        "matrix_type": matrix_type,
+                        "step": np.arange(len(max_loss_values)),
+                        "n_cov_pairs": config.n_cov_pairs,
+                        "random_seed": random_seed,
+                        "true_coef": true_coef,
+                        "empirical_empirical_coef": empirical_coef,
+                        "rho": rho,
+                    }
                 )
-                # import pdb; pdb.set_trace()
-                plotting_dfs.append(
-                    pd.DataFrame(
-                        {
-                            "max_bound": max_bound,
-                            "min_bound": min_bound,
-                            "max_loss": max_loss_values,
-                            "min_loss": min_loss_values,
-                            "restriction_type": restriction_type,
-                            "trial_idx": trial_idx,
-                            "matrix_type": matrix_type,
-                            "step": np.arange(len(max_loss_values)),
-                        }
-                    )
-                )
+            )
 
     plotting_df = pd.concat(plotting_dfs).astype(
         {
@@ -788,16 +958,16 @@ if __name__ == "__main__":
 
     fig, ax = plt.subplots(1, 1, figsize=(10, 5))
     ax.axhline(
-        y=dataset.true_conditional_mean,
+        y=true_coef,
         color="cyan",
         linestyle="dashed",
-        label="True Empirical Conditional Mean",
+        label="True Coefficient",
     )
     ax.axhline(
-        y=dataset.empirical_conditional_mean,
+        y=empirical_coef,
         color="olive",
         linestyle="dashed",
-        label="Empirical Conditional Mean",
+        label="Empirical Empirical Coefficient",
     )
     sns.lineplot(
         data=plotting_df,
@@ -818,9 +988,16 @@ if __name__ == "__main__":
         ax=ax,
         legend=False,
     )
-    ax.set_title("Conditional Mean")
-    fig.savefig(f"losses_{timestamp}")
-    plotting_df.to_csv("plotting_df.csv")
+    ax.set_title("Estimated Coefficient")
+    fig.savefig(os.path.join("..", "experiment_artifacts", timestamp, "losses"))
+    plotting_df.to_csv(
+        os.path.join("..", "experiment_artifacts", timestamp, "plotting_df.csv"),
+        index=False,
+    )
 
-    with open("dataset_metadata.pkl", "wb") as outp:
-        pickle.dump(dataset, outp, pickle.HIGHEST_PROTOCOL)
+    with open(
+        os.path.join("..", "experiment_artifacts", timestamp, "config.json"), "w"
+    ) as outp:
+        json.dump(config_dict, outp, indent=4)
+
+    print(f"Process finished! Results saved in folder: {timestamp}")
