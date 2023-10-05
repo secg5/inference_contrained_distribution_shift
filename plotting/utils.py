@@ -1,8 +1,10 @@
 import os
 
 import pandas as pd
+
 STEP = 3499
 STEP_TWO = 4999
+
 
 def generate_theta_plots_1_2_3(base_path: str, timestamp: str, ax):
     plotting_df = pd.read_csv(os.path.join(base_path, timestamp, "plotting_df.csv"))
@@ -423,19 +425,19 @@ def generate_cov_plots(base_path: str, timestamp: str, ax):
     plotting_df = pd.read_csv(os.path.join(base_path, timestamp, "plotting_df.csv"))
 
     max_vals_cov = plotting_df[
-        (plotting_df["step"] == STEP)
+        (plotting_df["step"] == STEP_TWO)
         & (plotting_df["restriction_type"] == "cov_positive")
     ]["max_bound"]
     max_vals_count = plotting_df[
-        (plotting_df["step"] == STEP) & (plotting_df["restriction_type"] == "count")
+        (plotting_df["step"] == STEP_TWO) & (plotting_df["restriction_type"] == "count")
     ]["max_bound"]
 
     min_vals_cov = plotting_df[
-        (plotting_df["step"] == STEP)
+        (plotting_df["step"] == STEP_TWO)
         & (plotting_df["restriction_type"] == "cov_positive")
     ]["min_bound"]
     min_vals_count = plotting_df[
-        (plotting_df["step"] == STEP) & (plotting_df["restriction_type"] == "count")
+        (plotting_df["step"] == STEP_TWO) & (plotting_df["restriction_type"] == "count")
     ]["min_bound"]
 
     # Cov
