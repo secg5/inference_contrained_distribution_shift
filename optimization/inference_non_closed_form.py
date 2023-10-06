@@ -510,18 +510,11 @@ def assign_weights(data, hash_map, weights_features, matrix_type):
         indexes = data_features.iloc[i, :] == 1
         columns_names = data_features.iloc[i, :][indexes].index
         if matrix_type == "Nx12":
-            tuple_features = (
-                columns_names[-1],
-                columns_names[0],
-                columns_names[1],
-                columns_names[2],
-                columns_names[3],
-                columns_names[4],
-                columns_names[5],
-                columns_names[6],
+            tuple_features = (columns_names[-1],) + (
+                columns_names[i] for i in range(len(columns_names) - 1)
             )
         elif matrix_type == "Nx6":
-            tuple_features = (columns_names[0], columns_names[1])
+            tuple_features = (columns_names[i] for i in range(5))
         weight_index = hash_map[tuple_features]
         weight = weights_features[weight_index]
         weigths.append(weight)
@@ -967,7 +960,7 @@ if __name__ == "__main__":
         y=empirical_coef,
         color="olive",
         linestyle="dashed",
-        label="Empirical Empirical Coefficient",
+        label="Empirical Coefficient",
     )
     sns.lineplot(
         data=plotting_df,
