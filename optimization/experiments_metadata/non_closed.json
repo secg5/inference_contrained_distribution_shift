@@ -1,7 +1,6 @@
 {
     "random_seeds": [
         0
-
     ],
     "dataset_type": "folktables",
     "correlation_coeff": 1,
@@ -9,15 +8,21 @@
     "feature_names": [
         "CIT",
         "MIL",
-        "NATIVITY",
         "DIS",
         "PINCP",
         "SEX"
     ],
-    "states": ["AL"],
+    "states": [
+        "AL"
+    ],
     "n_trials": 1,
     "n_optim_iters": 15,
-    "restriction_trials": ["count", "count_minus"],
-    "matrix_types": ["Nx6"],
+    "restriction_trials": [
+        "count",
+        "count_minus"
+    ],
+    "matrix_types": [
+        "Nx6"
+    ],
     "statistic": "regression"
 }
