@@ -541,3 +541,123 @@ def generate_cov_plots(base_path: str, timestamp: str, ax):
 
     # # Add a legend
     ax.legend(loc="lower right", fontsize=18)
+
+
+def generate_regression_plots(base_path: str, timestamp: str, ax):
+    plotting_df = pd.read_csv(os.path.join(base_path, timestamp, "plotting_df.csv"))
+
+    max_vals_count_plus = plotting_df[
+        (plotting_df["step"] == 999) & (plotting_df["restriction_type"] == "count_plus")
+    ]["max_bound"]
+    max_vals_count = plotting_df[
+        (plotting_df["step"] == 999) & (plotting_df["restriction_type"] == "count")
+    ]["max_bound"]
+
+    min_vals_count_plus = plotting_df[
+        (plotting_df["step"] == 999) & (plotting_df["restriction_type"] == "count_plus")
+    ]["min_bound"]
+    min_vals_count = plotting_df[
+        (plotting_df["step"] == 999) & (plotting_df["restriction_type"] == "count")
+    ]["min_bound"]
+
+    # Count
+    boxplot = ax.boxplot(
+        [max_vals_count, min_vals_count],
+        positions=[1, 1],
+        widths=0.2,
+        showfliers=False,
+        showbox=False,
+        showmeans=False,
+        showcaps=False,
+    )
+    ax.vlines(
+        1,
+        ymin=boxplot["whiskers"][0].get_ydata()[1],
+        ymax=boxplot["whiskers"][3].get_ydata()[1],
+    )
+
+    # Fill between boxplot whiskers
+    ax.fill_between(
+        [0.9, 1.1],
+        [boxplot["whiskers"][0].get_ydata()[1]] * 2,
+        [boxplot["whiskers"][1].get_ydata()[1]] * 2,
+        color="C0",
+        alpha=0.5,
+        hatch="//",
+    )
+    ax.fill_between(
+        [0.9, 1.1],
+        [boxplot["whiskers"][2].get_ydata()[1]] * 2,
+        [boxplot["whiskers"][3].get_ydata()[1]] * 2,
+        color="C0",
+        alpha=0.5,
+        hatch="//",
+    )
+
+    # Count Plus
+    boxplot = ax.boxplot(
+        [max_vals_count_plus, min_vals_count_plus],
+        positions=[2, 2],
+        widths=0.2,
+        showfliers=False,
+        showbox=False,
+        showmeans=False,
+        showcaps=False,
+    )
+    ax.vlines(
+        2,
+        ymin=boxplot["whiskers"][0].get_ydata()[1],
+        ymax=boxplot["whiskers"][3].get_ydata()[1],
+    )
+
+    # Fill between boxplot whiskers
+    ax.fill_between(
+        [1.9, 2.1],
+        [boxplot["whiskers"][0].get_ydata()[1]] * 2,
+        [boxplot["whiskers"][1].get_ydata()[1]] * 2,
+        color="C0",
+        alpha=0.5,
+        hatch="//",
+    )
+    ax.fill_between(
+        [1.9, 2.1],
+        [boxplot["whiskers"][2].get_ydata()[1]] * 2,
+        [boxplot["whiskers"][3].get_ydata()[1]] * 2,
+        color="C0",
+        alpha=0.5,
+        hatch="//",
+    )
+
+    true_coef_mean = plotting_df["true_coef"].mean()
+    min_empirical_coef = plotting_df["empirical_empirical_coef"].min()
+    max_empirical_coef = plotting_df["empirical_empirical_coef"].max()
+    ax.axhline(
+        y=true_coef_mean,
+        color="blue",
+        linestyle="dashed",
+        label="True value",
+        linewidth=2,
+    )
+    # Get x axis limits
+    min_x, max_x = ax.get_xlim()
+    ax.fill_between(
+        [min_x, max_x],
+        [min_empirical_coef] * 2,
+        [max_empirical_coef] * 2,
+        color="olive",
+        alpha=0.2,
+        label="Naive estimator",
+        hatch="//",
+    )
+
+    ax.set_xticks([1, 2])
+    ax.set_xticklabels(["Experiment 1", "Experimnent 2"])
+
+    ax.tick_params(axis="both", which="major", labelsize=13)
+    ax.tick_params(axis="both", which="minor", labelsize=16)
+
+    ax.set_ylabel("Estimated Coefficient", fontsize=20)
+    ax.set_xlabel("Number of constraints in $\\theta(X)$", fontsize=20)
+
+    # # # Add a legend
+    # ax.legend(loc="lower right", fontsize=18)
