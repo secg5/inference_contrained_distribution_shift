@@ -331,6 +331,18 @@ def compute_f_divergence(p, q, type="chi2"):
     # other_A0, other_A1 = build_strata_counts_matrix(weights_features, counts2, ["female", "male"])
 
 
+def get_optimized_rho(
+    A_dict,
+    strata_estimands,
+    feature_weights,
+    restriction_values,
+    n_iters,
+    restriction_type,
+    dataset_size,
+):
+    raise NotImplementedError
+
+
 def get_cov_restrictions(
     data: pd.DataFrame, target: str, treatment_level: List[str], cov_vars: List[str]
 ) -> Tuple[np.ndarray, np.ndarray]:
@@ -624,6 +636,10 @@ def run_search(
 
         prob = cp.Problem(cp.Minimize(objective), restrictions)
         prob.solve()
+
+        if w.value is None:
+            print("\nOptimization failed.\n")
+            break
 
         alpha.data = torch.tensor(w.value).float()
         weights = weights_array @ alpha
