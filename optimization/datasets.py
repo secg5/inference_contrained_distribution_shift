@@ -173,6 +173,7 @@ class FolktablesLoader(DatasetLoader):
         conditioning_features: List[str] = None,
         size=None,
         buckets: dict = None,
+        separation_coeff: float = 1,
     ) -> None:
         self.feature_names = feature_names
         self.states = states
@@ -182,6 +183,7 @@ class FolktablesLoader(DatasetLoader):
         self.survey = survey
         self.alternate_outcome = alternate_outcome
         self.size = size
+        self.separation_coeff = separation_coeff
         if not conditioning_features:
             self.conditioning_features = feature_names[:2]
         if buckets:
@@ -248,12 +250,9 @@ class FolktablesLoader(DatasetLoader):
         X_selected = df.to_numpy()
 
         X_normed = MinMaxScaler().fit_transform(X_selected)
-        # obs = expit(-X_normed[:, 0] - 3*X_normed[:, 1]) > self.rng.uniform(
-        #     size=X.shape[0]
-        # )
-        obs = expit(-X_normed[:, 0] - X_normed[:, 1]) > self.rng.uniform(
-            size=X.shape[0]
-        )
+        obs = expit(
+            -X_normed[:, 0] - self.separation_coeff * X_normed[:, 1]
+        ) > self.rng.uniform(size=X.shape[0])
         size = X.shape[0] if not self.size else self.size
         return X_selected[:size], A[:size], y[:size], obs[:size]
 

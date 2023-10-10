@@ -723,6 +723,7 @@ if __name__ == "__main__":
                 states=config.states,
                 feature_names=config.feature_names,
                 size=config.dataset_size,
+                separation_coeff=3,
             )
             dataset = data_loader.load()
             treatment_level = dataset.levels_colinear[0]
