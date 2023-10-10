@@ -632,7 +632,7 @@ def run_search(
             sq_weights = torch.sqrt(weights)
             W = torch.eye(weights.shape[0]) * sq_weights
 
-            coeff = lstsq(W @ features_tensor, W @ target, driver="gelsd")[0][0]
+            coeff = lstsq(W @ features_tensor, W @ target, driver="gelsd")[0][5]
             objective = coeff[0]
 
         elif statistic == "logistic_regression":
@@ -881,10 +881,10 @@ if __name__ == "__main__":
             population_model = LogisticRegression()
 
         sample_model.fit(X_train_sample, y_train_sample)
-        empirical_coef = sample_model.coef_.flatten()[0]
+        empirical_coef = sample_model.coef_.flatten()[5]
 
         population_model.fit(X_train_population, y_train_population)
-        true_coef = population_model.coef_.flatten()[0]
+        true_coef = population_model.coef_.flatten()[5]
 
         statistic = config.statistic
         for trial_idx in tqdm(range(config.n_trials), desc="Trials", leave=False):
