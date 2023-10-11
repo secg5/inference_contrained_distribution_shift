@@ -16,6 +16,7 @@ class Config:
     matrix_types: List
     statistic: str
     n_cov_pairs: Optional[int] = None
+    dro_restriction_trials: Optional[str] = None
 
 
 def parse_config_dict(config_dict):

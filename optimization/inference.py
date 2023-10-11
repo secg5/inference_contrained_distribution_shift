@@ -332,7 +332,7 @@ def get_optimized_rho(
     loss_values = []
     n_sample = data_count_1.sum() + data_count_0.sum()
 
-    for _ in tqdm(range(n_iters), desc="Optimizing rho", leave=False):
+    for _ in tqdm(range(n_iters * 3), desc="Optimizing rho", leave=False):
         w = cp.Variable(feature_weights.shape[1])
         alpha_fixed = alpha.squeeze().detach().numpy()
 
@@ -706,12 +706,20 @@ if __name__ == "__main__":
     if not os.path.exists(os.path.join("..", "experiment_artifacts", timestamp)):
         os.makedirs(os.path.join("..", "experiment_artifacts", timestamp))
 
+    if not config.dro_restriction_trials:
+        dro_restriction_trials = ["count"]
+    else:
+        dro_restriction_trials = config.dro_restriction_trials
+
     param_combinations = list(
         itertools.product(
-            config.matrix_types, config.restriction_trials, config.random_seeds
+            config.matrix_types,
+            config.restriction_trials,
+            config.random_seeds,
+            dro_restriction_trials,
         )
     )
-    for matrix_type, restriction_type, random_seed in tqdm(
+    for matrix_type, restriction_type, random_seed, dro_restriction_type in tqdm(
         param_combinations, desc="Param Combinations"
     ):
         rng = np.random.default_rng(random_seed)
@@ -853,9 +861,6 @@ if __name__ == "__main__":
                 feature_weights, strata_estimands["cov"], treatment_level
             )
 
-        if restriction_type.startswith("DRO") and matrix_type != "Nx12":
-            continue
-
         if restriction_type == "DRO_worst_case":
             rho, rho_history = get_optimized_rho(
                 A_dict=A_dict,
@@ -863,7 +868,7 @@ if __name__ == "__main__":
                 feature_weights=feature_weights,
                 restriction_values=restriction_values,
                 n_iters=config.n_optim_iters,
-                restriction_type="count",
+                restriction_type=dro_restriction_type,
                 dataset_size=dataset_size,
             )
 
@@ -887,7 +892,7 @@ if __name__ == "__main__":
                     "..",
                     "experiment_artifacts",
                     timestamp,
-                    f"rho_{random_seed}_{matrix_type}",
+                    f"rho_{random_seed}_{matrix_type}_{dro_restriction_type}",
                 )
             )
         elif restriction_type == "DRO":
@@ -941,6 +946,7 @@ if __name__ == "__main__":
                         "true_conditional_mean": dataset.true_conditional_mean,
                         "empirical_conditional_mean": dataset.empirical_conditional_mean,  # noqa: E501
                         "rho": rho,
+                        "dro_restriction_type": dro_restriction_type,
                     }
                 )
             )
