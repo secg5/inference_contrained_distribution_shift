@@ -15,10 +15,6 @@ def generate_plot_dro(
     max_steps = plotting_df.groupby(["matrix_type", "restriction_type"]).max()
 
     masks = {
-        ("Nx12", "DRO_worst_case"): (
-            plotting_df["step"] == max_steps.loc[("Nx12", "DRO_worst_case"), "step"]
-        )
-        & (plotting_df["restriction_type"] == "DRO_worst_case"),
         ("Nx12", "DRO"): (plotting_df["step"] == max_steps.loc[("Nx12", "DRO"), "step"])
         & (plotting_df["restriction_type"] == "DRO"),
     }
@@ -32,29 +28,50 @@ def generate_plot_dro(
         true_field="true_conditional_mean",
     )
     ax.tick_params(axis="both", which="major", labelsize=16)
-    ax.set_xticks([1, 2])
-    ax.set_xticklabels(["Worst Case", "Omniscient"])
-    ax.set_ylabel("Conditional Mean $\widehat{\mathbb{E}}[Y|A=1]$", fontsize=20)
-    ax.set_xlabel("DRO Benchmarks", fontsize=20)
+    ax.set_xticks([1])
+    ax.set_xticklabels(["Omniscient DRO"])
 
 
-def generate_theta_plots_1_2_3(base_path: str, timestamp: str, ax):
-    plotting_df = pd.read_csv(
-        os.path.join(base_path, timestamp, "plotting_df.csv"), low_memory=False
+def generate_theta_plots_1_2_3(
+    base_path: str, timestamp_ours: str, timestamp_dro: str, ax
+):
+    plotting_df_ours = pd.read_csv(
+        os.path.join(base_path, timestamp_ours, "plotting_df.csv"), low_memory=False
     )
+    plotting_df_dro = pd.read_csv(
+        os.path.join(base_path, timestamp_dro, "plotting_df.csv"), low_memory=False
+    )
+
+    plotting_df = pd.concat([plotting_df_ours, plotting_df_dro], axis=0)
+
     max_steps = plotting_df.groupby(["matrix_type", "restriction_type"]).max()
 
     masks = {
+        ("Nx12", "DRO_worst_case"): (
+            plotting_df["step"] == max_steps.loc[("Nx12", "DRO_worst_case"), "step"]
+        )
+        & (plotting_df["matrix_type"] == "Nx12")
+        & (plotting_df["restriction_type"] == "DRO_worst_case"),
         ("Nx12", "count"): (
             plotting_df["step"] == max_steps.loc[("Nx12", "count"), "step"]
         )
         & (plotting_df["matrix_type"] == "Nx12")
         & (plotting_df["restriction_type"] == "count"),
+        ("Nx8", "DRO_worst_case"): (
+            plotting_df["step"] == max_steps.loc[("Nx8", "DRO_worst_case"), "step"]
+        )
+        & (plotting_df["matrix_type"] == "Nx8")
+        & (plotting_df["restriction_type"] == "DRO_worst_case"),
         ("Nx8", "count"): (
             plotting_df["step"] == max_steps.loc[("Nx8", "count"), "step"]
         )
         & (plotting_df["matrix_type"] == "Nx8")
         & (plotting_df["restriction_type"] == "count"),
+        ("Nx6", "DRO_worst_case"): (
+            plotting_df["step"] == max_steps.loc[("Nx6", "DRO_worst_case"), "step"]
+        )
+        & (plotting_df["matrix_type"] == "Nx6")
+        & (plotting_df["restriction_type"] == "DRO_worst_case"),
         ("Nx6", "count"): (
             plotting_df["step"] == max_steps.loc[("Nx6", "count"), "step"]
         )
@@ -70,24 +87,61 @@ def generate_theta_plots_1_2_3(base_path: str, timestamp: str, ax):
         true_field="true_conditional_mean",
     )
     ax.tick_params(axis="both", which="major", labelsize=16)
-    ax.set_xticks([1, 2, 3])
-    ax.set_xticklabels(["Experiment 1", "Experiment 2", "Experiment 3"])
+    ax.set_xticks([1.5, 3.5, 5.5])
+    ax.set_xticklabels(["Unrestricted", "Separable", "Targeted"])
+    ax.set_ylabel("Conditional Mean $\widehat{\mathbb{E}}[Y|A=1]$", fontsize=20)
     ax.set_xlabel("Parametric form of $\\theta(X)$", fontsize=20)
 
 
-def generate_theta_plots_4_5_6(base_path: str, timestamp: str, ax):
-    plotting_df = pd.read_csv(
-        os.path.join(base_path, timestamp, "plotting_df.csv"), low_memory=False
+def generate_theta_plots_4_5_6(
+    base_path: str, timestamp_ours: str, timestamp_dro: str, ax
+):
+    plotting_df_ours = pd.read_csv(
+        os.path.join(base_path, timestamp_ours, "plotting_df.csv"), low_memory=False
     )
-    max_steps = plotting_df.groupby(["restriction_type"]).max()
+    plotting_df_dro = pd.read_csv(
+        os.path.join(base_path, timestamp_dro, "plotting_df.csv"), low_memory=False
+    )
+
+    plotting_df_ours["dro_restriction_type"] = plotting_df_ours["restriction_type"]
+
+    plotting_df = pd.concat([plotting_df_ours, plotting_df_dro], axis=0)
+
+    max_steps = plotting_df.groupby(["restriction_type", "dro_restriction_type"]).max()
 
     masks = {
-        "count_minus": (plotting_df["step"] == max_steps.loc["count_minus", "step"])
-        & (plotting_df["restriction_type"] == "count_minus"),
-        "count": (plotting_df["step"] == max_steps.loc["count", "step"])
-        & (plotting_df["restriction_type"] == "count"),
-        "count_plus": (plotting_df["step"] == max_steps.loc["count_plus", "step"])
-        & (plotting_df["restriction_type"] == "count_plus"),
+        ("DRO_worst_case", "count_minus"): (
+            plotting_df["step"]
+            == max_steps.loc[("DRO_worst_case", "count_minus"), "step"]
+        )
+        & (plotting_df["restriction_type"] == "DRO_worst_case")
+        & (plotting_df["dro_restriction_type"] == "count_minus"),
+        ("count_minus", "count_minus"): (
+            plotting_df["step"] == max_steps.loc[("count_minus", "count_minus"), "step"]
+        )
+        & (plotting_df["restriction_type"] == "count_minus")
+        & (plotting_df["dro_restriction_type"] == "count_minus"),
+        ("DRO_worst_case", "count"): (
+            plotting_df["step"] == max_steps.loc[("DRO_worst_case", "count"), "step"]
+        )
+        & (plotting_df["restriction_type"] == "DRO_worst_case")
+        & (plotting_df["dro_restriction_type"] == "count"),
+        ("count", "count"): (
+            plotting_df["step"] == max_steps.loc[("count", "count"), "step"]
+        )
+        & (plotting_df["restriction_type"] == "count")
+        & (plotting_df["dro_restriction_type"] == "count"),
+        ("DRO_worst_case", "count_plus"): (
+            plotting_df["step"]
+            == max_steps.loc[("DRO_worst_case", "count_plus"), "step"]
+        )
+        & (plotting_df["restriction_type"] == "DRO_worst_case")
+        & (plotting_df["dro_restriction_type"] == "count_plus"),
+        ("count_plus", "count_plus"): (
+            plotting_df["step"] == max_steps.loc[("count_plus", "count_plus"), "step"]
+        )
+        & (plotting_df["restriction_type"] == "count_plus")
+        & (plotting_df["dro_restriction_type"] == "count_plus"),
     }
 
     plot_intervals(ax=ax, masks=masks, plotting_df=plotting_df, color="C0")
@@ -99,7 +153,7 @@ def generate_theta_plots_4_5_6(base_path: str, timestamp: str, ax):
         true_field="true_conditional_mean",
     )
     ax.tick_params(axis="both", which="major", labelsize=16)
-    ax.set_xticks([1, 2, 3])
+    ax.set_xticks([1.5, 3.5, 5.5])
     ax.set_xticklabels(["Experiment 4", "Experiment 5", "Experiment 6"])
     ax.set_xlabel("Number of constraints in $\\theta(X)$", fontsize=20)
 
@@ -155,7 +209,7 @@ def generate_theta_plots_1_2_regression(base_path: str, timestamp: str, ax):
     )
     ax.tick_params(axis="both", which="major", labelsize=16)
     ax.set_xticks([1, 2])
-    ax.set_xticklabels(["Experiment 1", "Experiment 2"])
+    ax.set_xticklabels(["Unrestricted", "Targeted"])
     ax.set_ylabel("Estimated Coefficient", fontsize=20)
     ax.set_xlabel("Parametric form of $\\theta(X)$", fontsize=20)
     ax.legend(loc="lower right", fontsize=18)
@@ -193,12 +247,18 @@ def plot_intervals(ax, masks: dict, plotting_df: pd.DataFrame, color="C0"):
             "max": plotting_df[mask]["max_bound"],
             "min": plotting_df[mask]["min_bound"],
         }
-    for idx, (_, bounds) in enumerate(experiment_bounds.items(), start=1):
+    for idx, (name, bounds) in enumerate(experiment_bounds.items(), start=1):
+        if type(name) == tuple and (("DRO" in name[0]) or ("DRO" in name[1])):
+            curr_color = "C1"
+            label = "DRO"
+        else:
+            curr_color = color
+            label = "Ours"
         ax.vlines(
             idx,
             ymin=np.median(bounds["min"]),
             ymax=np.median(bounds["max"]),
-            color=color,
+            color=curr_color,
             linewidth=2,
         )
 
@@ -209,7 +269,7 @@ def plot_intervals(ax, masks: dict, plotting_df: pd.DataFrame, color="C0"):
                 [idx - 0.1, idx + 0.1],
                 [quantiles[0]] * 2,
                 [quantiles[1]] * 2,
-                color=color,
+                color=curr_color,
                 alpha=0.1,
                 hatch="//",
             )
@@ -217,8 +277,9 @@ def plot_intervals(ax, masks: dict, plotting_df: pd.DataFrame, color="C0"):
             ax.plot(
                 [idx - 0.05, idx + 0.05],
                 [np.median(bounds[limit])] * 2,
-                color=color,
+                color=curr_color,
                 linewidth=2,
+                label=label,
             )
 
 
