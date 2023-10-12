@@ -27,9 +27,9 @@ def generate_plot_dro(
         empirical_field="empirical_conditional_mean",
         true_field="true_conditional_mean",
     )
-    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.tick_params(axis="both", which="major", labelsize=20)
     ax.set_xticks([1])
-    ax.set_xticklabels(["Omniscient DRO"])
+    ax.set_xticklabels(["Omniscient DRO"], rotation=45)
 
 
 def generate_theta_plots_1_2_3(
@@ -86,11 +86,11 @@ def generate_theta_plots_1_2_3(
         empirical_field="empirical_conditional_mean",
         true_field="true_conditional_mean",
     )
-    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.tick_params(axis="both", which="major", labelsize=20)
     ax.set_xticks([1.5, 3.5, 5.5])
-    ax.set_xticklabels(["Unrestricted", "Separable", "Targeted"])
-    ax.set_ylabel("Conditional Mean $\widehat{\mathbb{E}}[Y|A=1]$", fontsize=20)
-    ax.set_xlabel("Parametric form of $\\theta(X)$", fontsize=20)
+    ax.set_xticklabels(["Unrestricted", "Separable", "Targeted"], rotation=45)
+    ax.set_ylabel("Conditional Mean $\widehat{\mathbb{E}}[Y|A=1]$", fontsize=30)
+    ax.set_xlabel("Parametric form of $\\theta(X)$", fontsize=30)
 
 
 def generate_theta_plots_4_5_6(
@@ -152,10 +152,19 @@ def generate_theta_plots_4_5_6(
         empirical_field="empirical_conditional_mean",
         true_field="true_conditional_mean",
     )
-    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.tick_params(axis="both", which="major", labelsize=20)
     ax.set_xticks([1.5, 3.5, 5.5])
-    ax.set_xticklabels(["Experiment 4", "Experiment 5", "Experiment 6"])
-    ax.set_xlabel("Number of constraints in $\\theta(X)$", fontsize=20)
+    ax.set_xticklabels(
+        [
+            "(Partial) Race\n+ Income",
+            "(Full) Race\n+ Income",
+            "Race\n+ Income\n+ Alt. Outcome",
+        ],
+        rotation=45,
+        fontsize=18,
+    )
+
+    ax.set_xlabel("Number of constraints in $\\theta(X)$", fontsize=30)
 
 
 def generate_cov_plots(base_path: str, timestamp: str, ax):
@@ -207,12 +216,11 @@ def generate_theta_plots_1_2_regression(base_path: str, timestamp: str, ax):
         empirical_field="empirical_empirical_coef",
         true_field="true_coef",
     )
-    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.tick_params(axis="both", which="major", labelsize=24)
     ax.set_xticks([1, 2])
-    ax.set_xticklabels(["Unrestricted", "Targeted"])
-    ax.set_ylabel("Estimated Coefficient", fontsize=20)
-    ax.set_xlabel("Parametric form of $\\theta(X)$", fontsize=20)
-    ax.legend(loc="lower right", fontsize=18)
+    ax.set_xticklabels(["Unrestricted", "Targeted"], rotation=45)
+    ax.set_ylabel("Estimated Coefficient", fontsize=30)
+    ax.set_xlabel("Parametric form of $\\theta(X)$", fontsize=30)
 
 
 def generate_theta_plots_3_4_regression(base_path: str, timestamp: str, ax):
@@ -234,10 +242,17 @@ def generate_theta_plots_3_4_regression(base_path: str, timestamp: str, ax):
         empirical_field="empirical_empirical_coef",
         true_field="true_coef",
     )
-    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.tick_params(axis="both", which="major", labelsize=24)
     ax.set_xticks([1, 2])
-    ax.set_xticklabels(["Experiment 3", "Experiment 4"])
-    ax.set_xlabel("Number of constraints in $\\theta(X)$", fontsize=20)
+    ax.set_xticklabels(
+        [
+            "(Full) Race\n+ Income",
+            "Race\n+ Income\n+ Alt. Outcome",
+        ],
+        rotation=45,
+        fontsize=18,
+    )
+    ax.set_xlabel("Number of constraints in $\\theta(X)$", fontsize=30)
 
 
 def plot_intervals(ax, masks: dict, plotting_df: pd.DataFrame, color="C0"):
