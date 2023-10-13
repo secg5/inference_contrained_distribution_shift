@@ -340,7 +340,64 @@ def get_optimized_rho(
     restriction_type,
     dataset_size,
 ):
-    raise NotImplementedError
+    """Computes the optimal rho for the DRO optimization problem."""
+    data_count_0 = strata_estimands["count"][0]
+    data_count_1 = strata_estimands["count"][1]
+
+    torch.autograd.set_detect_anomaly(True)
+    alpha = torch.rand(feature_weights.shape[1], requires_grad=True)
+    optim = torch.optim.Adam([alpha], 0.01)
+    loss_values = []
+    n_sample = data_count_1.sum() + data_count_0.sum()
+
+    for _ in tqdm(range(n_iters * 3), desc="Optimizing rho", leave=False):
+        w = cp.Variable(feature_weights.shape[1])
+        alpha_fixed = alpha.squeeze().detach().numpy()
+
+        ratio = feature_weights @ w
+        q = (data_count_1 + data_count_0) / n_sample
+        q = q.reshape(-1, 1)
+        q = torch.flatten(q)
+
+        objective = cp.sum_squares(w - alpha_fixed)
+        restrictions = get_restrictions(
+            restriction_type=restriction_type,
+            A_dict=A_dict,
+            w=w,
+            restriction_values=restriction_values,
+            n_sample=n_sample,
+            dataset_size=dataset_size,
+            ratio=ratio,
+            q=q,
+        )
+
+        prob = cp.Problem(cp.Minimize(objective), restrictions)
+        prob.solve()
+
+        if w.value is None:
+            print("\nOptimization failed.\n")
+            break
+
+        alpha.data = torch.tensor(w.value).float()
+        weights_y1 = (feature_weights @ alpha).reshape(*data_count_1.shape)
+        weights_y0 = (feature_weights @ alpha).reshape(*data_count_0.shape)
+        weighted_counts_1 = weights_y1 * data_count_1
+        weighted_counts_0 = weights_y0 * data_count_0
+
+        rho = compute_f_divergence(
+            strata_estimands["count"] / dataset_size,
+            torch.stack([weighted_counts_0, weighted_counts_1], dim=0) / sample_size,
+            type="chi2",
+        )
+
+        loss = -rho
+        loss_values.append(float(rho.detach().numpy()))
+
+        optim.zero_grad()
+        loss.backward()
+        optim.step()
+
+    return float(rho.detach().numpy()), loss_values
 
 
 def get_cov_restrictions(
@@ -713,13 +770,21 @@ if __name__ == "__main__":
     if not os.path.exists(os.path.join("..", "experiment_artifacts", timestamp)):
         os.makedirs(os.path.join("..", "experiment_artifacts", timestamp))
 
+    if not config.dro_restriction_trials:
+        dro_restriction_trials = ["count"]
+    else:
+        dro_restriction_trials = config.dro_restriction_trials
+
     param_combinations = list(
         itertools.product(
-            config.matrix_types, config.restriction_trials, config.random_seeds
+            config.matrix_types,
+            config.restriction_trials,
+            config.random_seeds,
+            dro_restriction_trials,
         )
     )
 
-    for matrix_type, restriction_type, random_seed in tqdm(
+    for matrix_type, restriction_type, random_seed, dro_restriction_type in tqdm(
         param_combinations, desc="Param Combinations"
     ):
         rng = np.random.default_rng(random_seed)
@@ -825,7 +890,7 @@ if __name__ == "__main__":
             ),
         }
 
-        if restriction_type.startswith("DRO") and matrix_type != "Nx12":
+        if restriction_type == "DRO" and matrix_type != "Nx12":
             continue
 
         statistic = config.statistic
@@ -845,7 +910,7 @@ if __name__ == "__main__":
                 feature_weights=feature_weights,
                 restriction_values=restriction_values,
                 n_iters=config.n_optim_iters,
-                restriction_type="count",
+                restriction_type=dro_restriction_type,
                 dataset_size=dataset_size,
             )
 
@@ -869,7 +934,7 @@ if __name__ == "__main__":
                     "..",
                     "experiment_artifacts",
                     timestamp,
-                    f"rho_{random_seed}_{matrix_type}",
+                    f"rho_{random_seed}_{matrix_type}_{dro_restriction_type}",
                 )
             )
         elif restriction_type == "DRO":
@@ -949,6 +1014,7 @@ if __name__ == "__main__":
                         "true_coef": true_coef,
                         "empirical_empirical_coef": empirical_coef,
                         "rho": rho,
+                        "dro_restriction_type": dro_restriction_type,
                     }
                 )
             )
