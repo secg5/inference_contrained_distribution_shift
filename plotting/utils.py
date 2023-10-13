@@ -87,7 +87,7 @@ def generate_theta_plots_1_2_3(
         true_field="true_conditional_mean",
     )
     ax.tick_params(axis="both", which="major", labelsize=20)
-    ax.set_xticks([1.5, 3.5, 5.5])
+    ax.set_xticks([1, 3, 5])
     ax.set_xticklabels(["Unrestricted", "Separable", "Targeted"], rotation=45)
     ax.set_ylabel("Conditional Mean $\widehat{\mathbb{E}}[Y|A=1]$", fontsize=30)
     ax.set_xlabel("Parametric form of $\\theta(X)$", fontsize=30)
@@ -153,12 +153,12 @@ def generate_theta_plots_4_5_6(
         true_field="true_conditional_mean",
     )
     ax.tick_params(axis="both", which="major", labelsize=20)
-    ax.set_xticks([1.5, 3.5, 5.5])
+    ax.set_xticks([1, 3, 5])
     ax.set_xticklabels(
         [
             "(Partial) Race\n+ Income",
             "(Full) Race\n+ Income",
-            "Race\n+ Income\n+ Alt. Outcome",
+            "Race\n+ Income\n+ Outcome",
         ],
         rotation=45,
         fontsize=18,
@@ -262,7 +262,16 @@ def plot_intervals(ax, masks: dict, plotting_df: pd.DataFrame, color="C0"):
             "max": plotting_df[mask]["max_bound"],
             "min": plotting_df[mask]["min_bound"],
         }
+    centers = {
+        1: 0.75,
+        2: 1.25,
+        3: 2.75,
+        4: 3.25,
+        5: 4.75,
+        6: 5.25,
+    }
     for idx, (name, bounds) in enumerate(experiment_bounds.items(), start=1):
+        center = centers[idx]
         if type(name) == tuple and (("DRO" in name[0]) or ("DRO" in name[1])):
             curr_color = "C1"
             label = "DRO"
@@ -270,7 +279,7 @@ def plot_intervals(ax, masks: dict, plotting_df: pd.DataFrame, color="C0"):
             curr_color = color
             label = "Ours"
         ax.vlines(
-            idx,
+            center,
             ymin=np.median(bounds["min"]),
             ymax=np.median(bounds["max"]),
             color=curr_color,
@@ -281,7 +290,7 @@ def plot_intervals(ax, masks: dict, plotting_df: pd.DataFrame, color="C0"):
             quantiles = np.quantile(bounds[limit], [0.05, 0.95])
 
             ax.fill_between(
-                [idx - 0.1, idx + 0.1],
+                [center - 0.1, center + 0.1],
                 [quantiles[0]] * 2,
                 [quantiles[1]] * 2,
                 color=curr_color,
@@ -290,7 +299,7 @@ def plot_intervals(ax, masks: dict, plotting_df: pd.DataFrame, color="C0"):
             )
 
             ax.plot(
-                [idx - 0.05, idx + 0.05],
+                [center - 0.05, center + 0.05],
                 [np.median(bounds[limit])] * 2,
                 color=curr_color,
                 linewidth=2,
