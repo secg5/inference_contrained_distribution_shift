@@ -718,25 +718,26 @@ def run_search(
             lgit_loss = []
             with torch.no_grad():
                 coeff = torch.zeros(features_tensor.shape[1], 1).double()
-                for _ in range(40):
+                for _ in range(20):
                     p = torch.sigmoid(features_tensor @ coeff)
                     Wsqrt = torch.sqrt(weights * p * (1 - p))
                     Winv = 1 / (weights * p * (1 - p))
-                    z = features_tensor @ coeff + Winv * (target - p)
-                    coeff = lstsq(Wsqrt * features_tensor, Wsqrt * z, driver="gelsd")[0]
+                    z = features_tensor @ coeff + Winv * 1 / 8 * (target - p)
+                    # import pdb; pdb.set_trace()
+                    coeff = lstsq(Wsqrt * features_tensor, Wsqrt * z, driver="gels")[0]
                     loglik = (
                         (target * torch.log(p) + (1 - target) * torch.log(1 - p))
                         .mean()
                         .item()
                     )
-                    lgit_loss.append(loglik)
+                    lgit_loss.append(-loglik)
 
             p = torch.sigmoid(features_tensor @ coeff)
             Wsqrt = torch.sqrt(weights * p * (1 - p))
             Winv = 1 / (weights * p * (1 - p))
             z = features_tensor @ coeff + Winv * (target - p)
-            coeff = lstsq(Wsqrt * features_tensor, Wsqrt * z)[0]
-            objective = coeff[0][0]
+            coeff = lstsq(Wsqrt * features_tensor, Wsqrt * z)[0][5]
+            objective = coeff[0]
         else:
             raise ValueError(f"Statistic type {statistic} not supported.")
 
