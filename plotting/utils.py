@@ -95,6 +95,7 @@ def generate_theta_plots_1_2_3(
     ax.set_xticklabels(["Unrestricted", "Separable", "Targeted"], rotation=45)
     ax.set_ylabel("Conditional Mean $\widehat{\mathbb{E}}[Y|A=1]$", fontsize=30)
     ax.set_xlabel("Parametric form of $\\theta(X)$", fontsize=30)
+    return plotting_df
 
 
 def generate_theta_plots_4_5_6(
@@ -169,6 +170,7 @@ def generate_theta_plots_4_5_6(
     )
 
     ax.set_xlabel("Number of constraints in $\\theta(X)$", fontsize=30)
+    return plotting_df
 
 
 def generate_cov_plots(base_path: str, timestamp: str, ax):
@@ -182,7 +184,7 @@ def generate_cov_plots(base_path: str, timestamp: str, ax):
         & (plotting_df["restriction_type"] == "count"),
     }
 
-    plot_intervals(ax=ax, masks=masks, plotting_df=plotting_df, color="C0")
+    plot_intervals(ax=ax, masks=masks, plotting_df=plotting_df, color="C0", mode="cov")
 
     plot_references(
         ax=ax,
@@ -251,6 +253,7 @@ def generate_theta_plots_1_2_regression(
     ax.set_xticklabels(["Unrestricted", "Targeted"], rotation=45)
     ax.set_ylabel("Estimated Coefficient", fontsize=26)
     ax.set_xlabel("Parametric form of $\\theta(X)$", fontsize=26)
+    return plotting_df
 
 
 def generate_theta_plots_3_4_regression(
@@ -311,6 +314,7 @@ def generate_theta_plots_3_4_regression(
         fontsize=18,
     )
     ax.set_xlabel("Number of constraints in $\\theta(X)$", fontsize=26)
+    return plotting_df
 
 
 def plot_intervals(
