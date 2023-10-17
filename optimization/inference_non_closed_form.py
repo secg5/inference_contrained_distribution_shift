@@ -957,8 +957,8 @@ if __name__ == "__main__":
                         "n_cov_pairs": config.n_cov_pairs,
                         "random_seed": random_seed,
                         "true_coef": true_coef,
-                        "empirical_empirical_coef": empirical_coef,
-                        "rho": rho,
+                        "empirical_coef": empirical_coef,
+                        "rho": float(rho),
                         "dro_restriction_type": dro_restriction_type,
                     }
                 )

@@ -896,7 +896,7 @@ if __name__ == "__main__":
                         "random_seed": random_seed,
                         "true_conditional_mean": dataset.true_conditional_mean,
                         "empirical_conditional_mean": dataset.empirical_conditional_mean,  # noqa: E501
-                        "rho": rho,
+                        "rho": float(rho),
                         "dro_restriction_type": dro_restriction_type,
                     }
                 )

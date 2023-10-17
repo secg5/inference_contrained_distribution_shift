@@ -245,7 +245,7 @@ def generate_theta_plots_1_2_regression(
     plot_references(
         ax=ax,
         plotting_df=plotting_df,
-        empirical_field="empirical_empirical_coef",
+        empirical_field="empirical_coef",
         true_field="true_coef",
     )
     ax.tick_params(axis="both", which="major", labelsize=24)
@@ -300,7 +300,7 @@ def generate_theta_plots_3_4_regression(
     plot_references(
         ax=ax,
         plotting_df=plotting_df,
-        empirical_field="empirical_empirical_coef",
+        empirical_field="empirical_coef",
         true_field="true_coef",
     )
     ax.tick_params(axis="both", which="major", labelsize=24)
