@@ -56,23 +56,6 @@ class SimulationLoader(DatasetLoader):
         Returns:
             Tuple: the sample from the generated dataset.
         """
-
-        # X_1 = self.rng.choice(a=[0, 1, 2], size=self.dataset_size, p=[0.5, 0.3, 0.2])
-        # X_2 = self.rng.binomial(size=self.dataset_size, n=1, p=0.4)
-
-        # pi_A = expit(X_2 - X_1)
-        # A = 1 * (pi_A > self.rng.uniform(size=self.dataset_size))
-        # mu = expit(2 * A - X_1 + X_2)
-        # y = 1 * (mu > self.rng.uniform(size=self.dataset_size))
-
-        # mu2 = expit((X_1 + X_2)/2 - A)
-        # y2 = 1*(mu2 > np.random.uniform(size=self.dataset_size))
-
-        # obs = expit(X_1 - X_2) > self.rng.uniform(
-        #     size=self.dataset_size
-        # )
-        # X_total = np.stack((X_1, X_2), axis=-1)
-
         X = self.rng.choice(a=[0, 1, 2], size=self.dataset_size, p=[0.5, 0.3, 0.2])
         X_2 = self.rng.binomial(size=self.dataset_size, n=1, p=0.4)
 
@@ -207,13 +190,7 @@ class FolktablesLoader(DatasetLoader):
         )
 
         acs_data = data_source.get_data(states=self.states, download=True)
-        # The income data is filtered
-        # import pdb; pdb.set_trace()
         ACSIncome._preprocess = ACSEmployment._preprocess
-        # acs_data = acs_data[acs_data['AGEP'] > 16]
-        # acs_data = acs_data[acs_data['PINCP'] > 100]
-        # acs_data = acs_data[acs_data['WKHP'] > 0]
-        # acs_data = acs_data[acs_data['PWGTP'] >= 1]
 
         income = ACSIncome.df_to_numpy(acs_data)[1]
         X, y, group = ACSEmployment.df_to_numpy(acs_data)
@@ -235,18 +212,11 @@ class FolktablesLoader(DatasetLoader):
 
         # last feature is the group
         df = pd.DataFrame(X, columns=ACSEmployment.features)
-        # df = self._group_features(df)
-
-        # df['EDU'] = df['SCHL'].apply(transform_values)
-        # df = df.drop('SCHL', axis=1)
-        # df = df.rename(columns={'EDU': 'SCHL'}, inplace=False)
         # Apply the mapping to the column
-
         df["PINCP"] = income.astype(int)
 
         df = df[self.feature_names]
         df["MIL"] = df["MIL"].map(mapping)
-        # print(df.head(1))
         X_selected = df.to_numpy()
 
         X_normed = MinMaxScaler().fit_transform(X_selected)
@@ -291,14 +261,12 @@ class FolktablesLoader(DatasetLoader):
                 str(feature_names[column_idx]) + "_" + str(j)
                 for j in range(int(strata_number))
             ]
-            # print(names, features.shape[1])
             if full:
                 data[names] = 0
                 data[names] = features
                 levels.append(names)
             else:
                 data[names[:-1]] = 0
-                # print(features.columns[:-1])
                 data[names[:-1]] = features[features.columns[:-1]]
                 levels.append(names[:-1])
         if full:
@@ -313,8 +281,6 @@ class FolktablesLoader(DatasetLoader):
         X_sample = X[obs]
         y_sample = y[obs]
 
-        # Compute conditional mean using sex feature
-        # Fix this, should always coincide with the tensor in the run method
         empirical_conditional_mean = self._get_ate_conditional_mean(
             1 - X_sample[:, -1], y_sample
         )
@@ -339,8 +305,6 @@ class FolktablesLoader(DatasetLoader):
         sample_df_colinear = population_df_colinear[obs].copy()
         sample_df_colinear["Creditability"] = y_sample
 
-        # print("true conditionalmean", true_conditional_mean)
-        # print("empirical conditional mean", empirical_conditional_mean)
         dataset = Dataset(
             population_df=population_df,
             sample_df=sample_df,

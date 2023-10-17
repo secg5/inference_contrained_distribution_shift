@@ -17,7 +17,6 @@ from tqdm import tqdm
 
 
 def read_json(config_filename):
-    # Load configuration from JSON file
     with open(config_filename, "r") as config_file:
         config_dict = json.load(config_file)
     return config_dict
@@ -121,27 +120,6 @@ def get_feature_weights(
         if matrix_type == "Nx12":
             feature_weights = torch.eye(number_strata)
             return feature_weights
-        # elif matrix_type == "Nx10":
-        #     idx = 0
-        #     idj = 0
-        #     idm = 0
-        #     feature_weights = torch.zeros(number_strata, degrees_of_freedom *2*2)
-        #     starting_tuple = (levels[0][0], levels[1][0], levels[2][0], levels[3][0])
-        #     previous_tuple = starting_tuple
-        #     for combination in traverse_level_combinations(levels):
-        #         current_tuple = (combination[0], combination[1], combination[2], combination[3])
-        #         if previous_tuple != current_tuple:
-        #             if current_tuple == starting_tuple:
-        #                 idj = 0
-        #             else:
-        #                 idj += 1
-
-        #         weight = [0] * degrees_of_freedom*2*2
-        #         weight[idj] = 1
-        #         feature_weights[idx] = torch.tensor(weight).float()
-        #         idx += 1
-        #         previous_tuple = current_tuple
-        #     return feature_weights
         elif matrix_type == "Nx8":
             idx = 0
             idj = 0
@@ -180,7 +158,6 @@ def get_feature_weights(
             idj = 0
             feature_weights = torch.zeros(number_strata, degrees_of_freedom)
             starting_tuple = (levels[1][0], levels[2][0])
-            # print(starting_tuple)
             previous_tuple = starting_tuple
             for combination in traverse_level_combinations(levels):
                 current_tuple = (combination[1], combination[2])
@@ -270,7 +247,6 @@ def get_strata_covs(
 def get_count_restrictions(
     data: pd.DataFrame, target: str, treatment_level: List[str]
 ) -> Tuple[np.ndarray, np.ndarray]:
-    # import pdb; pdb.set_trace()
     y00_val_1 = sum((data[target[0]] == 1) & (data[treatment_level[0]] == 1))
     y01_val_1 = sum((data[target[1]] == 1) & (data[treatment_level[0]] == 1))
 
@@ -286,7 +262,6 @@ def get_count_restrictions(
 def get_count_restrictions_y(
     data: pd.DataFrame, target: str, treatment_level: List[str]
 ) -> Tuple[np.ndarray, np.ndarray]:
-    # import pdb; pdb.set_trace()
     y00_val_1 = sum((data[target] == 0) & (data[treatment_level[0]] == 1))
     y01_val_1 = sum((data[target] == 1) & (data[treatment_level[0]] == 1))
 
@@ -301,7 +276,6 @@ def get_count_restrictions_y(
 
 def compute_f_divergence(p, q, type="chi2"):
     if type == "chi2":
-        # return 0.5 * torch.sum((p-q)**2/(p+q+1e-8))
         numerator = (p - q) ** 2
         denominator = q + 1e-8
         # Only include terms where q is non-zero
@@ -435,9 +409,6 @@ def build_strata_counts_matrix(
     _, features_n = feature_weights.shape
     level_size = len(treatment_level)
 
-    # y_0_treatment = torch.zeros(level_size, features_n)
-    # y_1_treatment = torch.zeros(level_size, features_n)
-
     data_count_0 = counts.select(-2, 0)
     data_count_1 = counts.select(-2, 1)
 
@@ -452,16 +423,6 @@ def build_strata_counts_matrix(
 
     features_0 = torch.stack(features_0)
     features_1 = torch.stack(features_1)
-
-    # for level in range(2):
-    #     t = data_count_0[level].flatten().unsqueeze(1)
-    #     features = feature_weights[level * t.shape[0] : (level + 1) * t.shape[0]]
-    #     y_0_treatment[level] = (features * t).sum(dim=0)
-
-    # for level in range(level_size):
-    #     t_ = data_count_1[level].flatten().unsqueeze(1)
-    #     features_ = feature_weights[level * t.shape[0] : (level + 1) * t.shape[0]]
-    #     y_1_treatment[level] = (features_ * t_).sum(dim=0)
 
     y_0_treatment = torch.zeros(level_size, features_n)
     y_1_treatment = torch.zeros(level_size, features_n)
@@ -568,7 +529,6 @@ def get_restrictions(
     rho=None,
 ):
     restrictions = [feature_weights @ w >= n_sample / dataset_size]
-    # import pdb; pdb.set_trace()
     if restriction_type == "count":
         restrictions += [
             A_dict["count"][0] @ w == restriction_values["count"][0],
@@ -674,8 +634,6 @@ def run_search(
 
         loss = -conditional_mean if upper_bound else conditional_mean
         loss_values.append(conditional_mean.detach().numpy())
-        # if index % 100 == 0:
-        #     print(loss)
         optim.zero_grad()
         loss.backward()
         optim.step()
@@ -741,10 +699,6 @@ if __name__ == "__main__":
             treatment_level = dataset.levels_colinear[0]
             treatment_level_restriction = dataset.levels_colinear[-1]
             treatment_level_restriction_2 = dataset.levels_colinear[-2]
-            # print("treatment_level_restriction", treatment_level_restriction)
-            # print("treatment_level_restriction_2", treatment_level_restriction_2)
-
-            # print("levles", dataset.levels_colinear)
             dataset_size = dataset.population_df_colinear.shape[0]
             sample_size = dataset.sample_df_colinear.shape[0]
         else:
@@ -797,7 +751,6 @@ if __name__ == "__main__":
                 }
                 all_feature_means.append(feature_means)
 
-        # Review the experiment with the alternative outcome
         strata_dfs = get_feature_strata(
             df=dataset.sample_df_colinear,
             levels=dataset.levels_colinear,
@@ -813,7 +766,6 @@ if __name__ == "__main__":
             levels=dataset.levels_colinear,
             target=dataset.target,
         )
-        # This needs better naming
         strata_estimands = {
             "count": get_strata_counts(
                 strata_dfs=strata_dfs, levels=dataset.levels_colinear
@@ -822,7 +774,6 @@ if __name__ == "__main__":
                 strata_dfs=strata_dfs_alternate_outcome, levels=dataset.levels_colinear
             ),
         }
-        # print("levels_colinear", dataset.levels_colinear)
         if config.n_cov_pairs and restriction_type.startswith("cov"):
             strata_estimands["cov"] = get_strata_covs(
                 strata_dfs=strata_dfs,

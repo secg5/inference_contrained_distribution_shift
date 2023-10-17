@@ -24,7 +24,6 @@ def traverse_combinations(list_of_lists):
 
 
 def read_json(config_filename):
-    # Load configuration from JSON file
     with open(config_filename, "r") as config_file:
         config_dict = json.load(config_file)
     return config_dict
@@ -104,32 +103,11 @@ def get_feature_weights(
             feature_weights = torch.eye(number_strata)
             idx = 0
             hash_map = {}
-            # levels_full
             for combination in traverse_combinations(levels):
                 hash_map[combination] = idx
                 idx += 1
             return feature_weights, hash_map
-        # elif matrix_type == "Nx10":
-        #     idx = 0
-        #     idj = 0
-        #     idm = 0
-        #     feature_weights = torch.zeros(number_strata, degrees_of_freedom *2*2)
-        #     starting_tuple = (levels[0][0], levels[1][0], levels[2][0], levels[3][0])
-        #     previous_tuple = starting_tuple
-        #     for combination in traverse_level_combinations(levels):
-        #         current_tuple = (combination[0], combination[1], combination[2], combination[3])
-        #         if previous_tuple != current_tuple:
-        #             if current_tuple == starting_tuple:
-        #                 idj = 0
-        #             else:
-        #                 idj += 1
 
-        #         weight = [0] * degrees_of_freedom*2*2
-        #         weight[idj] = 1
-        #         feature_weights[idx] = torch.tensor(weight).float()
-        #         idx += 1
-        #         previous_tuple = current_tuple
-        #     return feature_weights
         elif matrix_type == "Nx8":
             idx = 0
             idj = 0
@@ -168,7 +146,6 @@ def get_feature_weights(
             idj = 0
             feature_weights = torch.zeros(number_strata, degrees_of_freedom)
             starting_tuple = (levels[1][0], levels[2][0])
-            # print(starting_tuple)
             previous_tuple = starting_tuple
             hash_map = {}
             for combination in traverse_level_combinations(levels):
@@ -236,7 +213,6 @@ def get_strata_counts(
     strata_dfs: Dict[Tuple, pd.DataFrame], levels: List[List[str]]
 ) -> torch.Tensor:
     strata_counts = list()
-    # Ensure same order?
     for strata_df in strata_dfs.values():
         if strata_df.shape[0] == 0:
             strata_counts.append(0.00001)
@@ -276,7 +252,6 @@ def get_strata_covs(
 def get_count_restrictions(
     data: pd.DataFrame, target: str, treatment_level: List[str]
 ) -> Tuple[np.ndarray, np.ndarray]:
-    # import pdb; pdb.set_trace()
     y00_val_1 = sum((data[target[0]] == 1) & (data[treatment_level[0]] == 1))
     y01_val_1 = sum((data[target[1]] == 1) & (data[treatment_level[0]] == 1))
 
@@ -292,7 +267,6 @@ def get_count_restrictions(
 def get_count_restrictions_y(
     data: pd.DataFrame, target: str, treatment_level: List[str]
 ) -> Tuple[np.ndarray, np.ndarray]:
-    # import pdb; pdb.set_trace()
     y00_val_1 = sum((data[target] == 0) & (data[treatment_level[0]] == 1))
     y01_val_1 = sum((data[target] == 1) & (data[treatment_level[0]] == 1))
 
@@ -307,7 +281,6 @@ def get_count_restrictions_y(
 
 def compute_f_divergence(p, q, type="chi2"):
     if type == "chi2":
-        # return 0.5 * torch.sum((p-q)**2/(p+q+1e-8))
         numerator = (p - q) ** 2
         denominator = q + 1e-8
         # Only include terms where q is non-zero
@@ -317,18 +290,6 @@ def compute_f_divergence(p, q, type="chi2"):
         return 0.5 * torch.sum(numerator / denominator)
     else:
         raise ValueError(f"Invalid divergence type {type}.")
-
-    # # Creates groundtruth values to generate linear restrictions *for other outcome*.
-    # other_y00_female = sum((data["other_outcome"] == 0) & (data["female"] == 1))
-    # other_y01_female = sum((data["other_outcome"] == 1) & (data["female"] == 1))
-
-    # other_y00_male = sum((data["other_outcome"] == 0) & (data["male"] == 1))
-    # other_y01_male = sum((data["other_outcome"] == 1) & (data["male"] == 1))
-
-    # other_b0 = np.array([other_y00_female, other_y00_male])
-    # other_b1 = np.array([other_y01_female, other_y01_male])
-
-    # other_A0, other_A1 = build_strata_counts_matrix(weights_features, counts2, ["female", "male"])
 
 
 def get_optimized_rho(
@@ -446,9 +407,6 @@ def build_strata_counts_matrix(
     _, features_n = feature_weights.shape
     level_size = len(treatment_level)
 
-    # y_0_treatment = torch.zeros(level_size, features_n)
-    # y_1_treatment = torch.zeros(level_size, features_n)
-
     data_count_0 = counts.select(-2, 0)
     data_count_1 = counts.select(-2, 1)
 
@@ -463,16 +421,6 @@ def build_strata_counts_matrix(
 
     features_0 = torch.stack(features_0)
     features_1 = torch.stack(features_1)
-
-    # for level in range(2):
-    #     t = data_count_0[level].flatten().unsqueeze(1)
-    #     features = feature_weights[level * t.shape[0] : (level + 1) * t.shape[0]]
-    #     y_0_treatment[level] = (features * t).sum(dim=0)
-
-    # for level in range(level_size):
-    #     t_ = data_count_1[level].flatten().unsqueeze(1)
-    #     features_ = feature_weights[level * t.shape[0] : (level + 1) * t.shape[0]]
-    #     y_1_treatment[level] = (features_ * t_).sum(dim=0)
 
     y_0_treatment = torch.zeros(level_size, features_n)
     y_1_treatment = torch.zeros(level_size, features_n)
@@ -602,7 +550,6 @@ def get_restrictions(
     rho=None,
 ):
     restrictions = [feature_weights @ w >= n_sample / dataset_size]
-    # import pdb; pdb.set_trace()
     if restriction_type == "count":
         restrictions += [
             A_dict["count"][0] @ w == restriction_values["count"][0],
@@ -714,7 +661,6 @@ def run_search(
             # Here we find a local minima for the logistic regression
             # before fitting the theta to have a faster convergence.
             # The algorithm is taken from The elemets of statistical learning pg 121.
-            # TODO: review if W allows weights diff from the ones in pg 121 of the book.
             lgit_loss = []
             with torch.no_grad():
                 coeff = torch.zeros(features_tensor.shape[1], 1).double()
@@ -723,7 +669,6 @@ def run_search(
                     Wsqrt = torch.sqrt(weights * p * (1 - p))
                     Winv = 1 / (weights * p * (1 - p))
                     z = features_tensor @ coeff + Winv * 1 / 8 * (target - p)
-                    # import pdb; pdb.set_trace()
                     coeff = lstsq(Wsqrt * features_tensor, Wsqrt * z, driver="gels")[0]
                     loglik = (
                         (target * torch.log(p) + (1 - target) * torch.log(1 - p))
@@ -998,7 +943,6 @@ if __name__ == "__main__":
                 statistic=statistic,
                 weights_array=weights_array,
             )
-            # import pdb; pdb.set_trace()
             plotting_dfs.append(
                 pd.DataFrame(
                     {
