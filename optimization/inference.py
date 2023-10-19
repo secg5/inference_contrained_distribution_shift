@@ -93,9 +93,9 @@ def get_feature_weights(
         idj += 1
     """
     if dataset_type == "simulation":
-        if matrix_type == "Nx12":
+        if matrix_type == "unrestricted":
             return torch.eye(12, 12)
-        elif matrix_type == "Nx8":
+        elif matrix_type == "separable":
             block_1 = torch.eye(6, 6)
             block_1[:, -2] = 1
             block_1[:, -1] = 0
@@ -104,23 +104,23 @@ def get_feature_weights(
             block_2[:, -2] = 0
             block_2[:, -1] = 1
             return torch.cat([block_1, block_2])
-        elif matrix_type == "Nx6":
+        elif matrix_type == "separable":
             return torch.cat([torch.eye(6, 6), torch.eye(6, 6)])
         else:
             raise ValueError(
                 f"Invalid feature matrix type {matrix_type} for simulated dataset."
             )
-    elif dataset_type == "folktables":
+    elif dataset_type == "semi-synthetic":
         number_strata = 1
         for level in levels:
             number_strata *= len(level)
 
         degrees_of_freedom = len(levels[1]) * len(levels[2])
 
-        if matrix_type == "Nx12":
+        if matrix_type == "unrestricted":
             feature_weights = torch.eye(number_strata)
             return feature_weights
-        elif matrix_type == "Nx8":
+        elif matrix_type == "separable":
             idx = 0
             idj = 0
             idm = 0
@@ -153,7 +153,7 @@ def get_feature_weights(
                 previous_feature = current_feature
             return feature_weights
 
-        elif matrix_type == "Nx6":
+        elif matrix_type == "separable":
             idx = 0
             idj = 0
             feature_weights = torch.zeros(number_strata, degrees_of_freedom)
@@ -691,7 +691,7 @@ if __name__ == "__main__":
             treatment_level = dataset.levels_colinear[0]
             dataset_size = dataset.population_df_colinear.shape[0]
             sample_size = dataset.sample_df_colinear.shape[0]
-        elif config.dataset_type == "folktables":
+        elif config.dataset_type == "semi-synthetic":
             data_loader = FolktablesLoader(
                 rng=rng, states=config.states, feature_names=config.feature_names
             )
@@ -896,7 +896,7 @@ if __name__ == "__main__":
                         "random_seed": random_seed,
                         "true_conditional_mean": dataset.true_conditional_mean,
                         "empirical_conditional_mean": dataset.empirical_conditional_mean,  # noqa: E501
-                        "rho": float(rho),
+                        "rho": float(rho) if rho else None,
                         "dro_restriction_type": dro_restriction_type,
                     }
                 )
