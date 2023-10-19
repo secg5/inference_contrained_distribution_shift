@@ -194,11 +194,12 @@ def generate_cov_plots(base_path: str, timestamp: str, ax):
     )
     ax.tick_params(axis="both", which="major", labelsize=16)
     ax.set_xticks([1, 2])
-    ax.set_xticklabels(["Covariance", "Count"])
+    ax.set_xticklabels(["Positive Covariance", "Targeted"])
     ax.set_ylabel("Conditional Mean $\widehat{\mathbb{E}}[Y|A=1]$", fontsize=20)
-    ax.set_xlabel("Number of constraints in $\\theta(X)$", fontsize=20)
+    ax.set_xlabel("Constraint Type", fontsize=20)
 
     ax.legend(loc="lower right", fontsize=18)
+    return plotting_df
 
 
 def generate_theta_plots_1_2_regression(
@@ -345,6 +346,8 @@ def generate_logistic_plot(base_path: str, timestamp: str, ax):
     ax.set_xticklabels(["(Partial) Race\n+ Income"])
     ax.set_ylabel("Estimated Coefficient", fontsize=26)
     ax.set_xlabel("Number of constraints in $\\theta(X)$", fontsize=20)
+
+    return plotting_df
 
 
 def plot_intervals(
