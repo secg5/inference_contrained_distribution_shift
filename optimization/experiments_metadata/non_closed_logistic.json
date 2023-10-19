@@ -1,21 +1,31 @@
 {
-    "random_seed": 1234,
+    "random_seeds": [
+        0,
+        1,
+        2,
+        3,
+        4
+    ],
     "dataset_type": "folktables",
     "correlation_coeff": 1,
-    "dataset_size": 25000,
+    "dataset_size": null,
     "feature_names": [
+        "CIT",
         "MIL",
-        "ANC",
-        "NATIVITY",
-        "DEAR",
-        "DEYE",
-        "DREM",
+        "DIS",
+        "PINCP",
         "SEX"
     ],
-    "states": ["AL"],
+    "states": [
+        "AL"
+    ],
     "n_trials": 1,
-    "n_optim_iters": 15,
-    "restriction_trials": ["count", "count_minus"],
-    "matrix_types": ["Nx6"],
-    "statistic": "regression_logistic"
+    "n_optim_iters": 2000,
+    "restriction_trials": [
+        "count_minus"
+    ],
+    "matrix_types": [
+        "Nx12"
+    ],
+    "statistic": "logistic_regression"
 }
