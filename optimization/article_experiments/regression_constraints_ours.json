@@ -1,0 +1,32 @@
+{
+    "random_seeds": [
+        0,
+        1,
+        2,
+        3,
+        4
+    ],
+    "dataset_type": "semi-synthetic",
+    "correlation_coeff": 1,
+    "dataset_size": null,
+    "feature_names": [
+        "CIT",
+        "MIL",
+        "DIS",
+        "PINCP",
+        "SEX"
+    ],
+    "states": [
+        "AL"
+    ],
+    "n_trials": 1,
+    "n_optim_iters": 1500,
+    "restriction_trials": [
+        "count",
+        "count_plus"
+    ],
+    "matrix_types": [
+        "unrestricted"
+    ],
+    "statistic": "regression"
+}
