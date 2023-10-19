@@ -317,6 +317,36 @@ def generate_theta_plots_3_4_regression(
     return plotting_df
 
 
+def generate_logistic_plot(base_path: str, timestamp: str, ax):
+    plotting_df = pd.read_csv(os.path.join(base_path, timestamp, "plotting_df.csv"))
+    max_steps = plotting_df.groupby(["restriction_type"]).max()
+
+    masks = {
+        "count_minus": (plotting_df["step"] == max_steps.loc["count_minus", "step"])
+        & (plotting_df["restriction_type"] == "count_minus"),
+    }
+
+    plot_intervals(
+        ax=ax,
+        masks=masks,
+        plotting_df=plotting_df,
+        color="C0",
+        mode="logistic_regression",
+    )
+
+    plot_references(
+        ax=ax,
+        plotting_df=plotting_df,
+        empirical_field="empirical_coef",
+        true_field="true_coef",
+    )
+    ax.tick_params(axis="both", which="major", labelsize=16)
+    ax.set_xticks([1])
+    ax.set_xticklabels(["(Partial) Race\n+ Income"])
+    ax.set_ylabel("Estimated Coefficient", fontsize=26)
+    ax.set_xlabel("Number of constraints in $\\theta(X)$", fontsize=20)
+
+
 def plot_intervals(
     ax, masks: dict, plotting_df: pd.DataFrame, color="C0", mode="dro_comparison"
 ):
