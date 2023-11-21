@@ -34,6 +34,7 @@ def generate_plot_dro(
     ax.tick_params(axis="both", which="major", labelsize=20)
     ax.set_xticks([1])
     ax.set_xticklabels(["Omniscient DRO"], rotation=45)
+    return plotting_df
 
 
 def generate_theta_plots_1_2_3(
