@@ -1,10 +1,10 @@
 {
     "random_seeds": [
-        0,
         1,
         2,
-        3,
-        4
+        4,
+        5,
+        6
     ],
     "dataset_type": "simulation",
     "correlation_coeff": 1,
@@ -14,13 +14,12 @@
     "n_trials": 1,
     "n_optim_iters": 3000,
     "restriction_trials": [
-        "DRO",
         "count"
     ],
     "matrix_types": [
-        "Nx12",
-        "Nx8",
-        "Nx6"
+        "unrestricted",
+        "separable",
+        "targeted"
     ],
     "statistic": "conditional_mean"
 }

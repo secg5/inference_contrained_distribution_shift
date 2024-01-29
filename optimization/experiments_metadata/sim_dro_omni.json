@@ -14,12 +14,10 @@
     "n_trials": 1,
     "n_optim_iters": 3000,
     "restriction_trials": [
-        "count_minus",
-        "count",
-        "count_plus"
+        "DRO"
     ],
     "matrix_types": [
-        "Nx8"
+        "unrestricted"
     ],
     "statistic": "conditional_mean"
 }

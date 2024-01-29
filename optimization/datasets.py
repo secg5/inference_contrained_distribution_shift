@@ -4,7 +4,7 @@ from typing import List, Tuple
 
 import numpy as np
 import pandas as pd
-from folktables import ACSDataSource, ACSEmployment
+from folktables import ACSDataSource, ACSEmployment, ACSIncome
 from scipy.special import expit
 from sklearn.preprocessing import MinMaxScaler
 
@@ -56,23 +56,6 @@ class SimulationLoader(DatasetLoader):
         Returns:
             Tuple: the sample from the generated dataset.
         """
-
-        # X_1 = self.rng.choice(a=[0, 1, 2], size=self.dataset_size, p=[0.5, 0.3, 0.2])
-        # X_2 = self.rng.binomial(size=self.dataset_size, n=1, p=0.4)
-
-        # pi_A = expit(X_2 - X_1)
-        # A = 1 * (pi_A > self.rng.uniform(size=self.dataset_size))
-        # mu = expit(2 * A - X_1 + X_2)
-        # y = 1 * (mu > self.rng.uniform(size=self.dataset_size))
-
-        # mu2 = expit((X_1 + X_2)/2 - A)
-        # y2 = 1*(mu2 > np.random.uniform(size=self.dataset_size))
-
-        # obs = expit(X_1 - X_2) > self.rng.uniform(
-        #     size=self.dataset_size
-        # )
-        # X_total = np.stack((X_1, X_2), axis=-1)
-
         X = self.rng.choice(a=[0, 1, 2], size=self.dataset_size, p=[0.5, 0.3, 0.2])
         X_2 = self.rng.binomial(size=self.dataset_size, n=1, p=0.4)
 
@@ -173,6 +156,7 @@ class FolktablesLoader(DatasetLoader):
         conditioning_features: List[str] = None,
         size=None,
         buckets: dict = None,
+        correlation_coeff: float = 1,
     ) -> None:
         self.feature_names = feature_names
         self.states = states
@@ -182,6 +166,7 @@ class FolktablesLoader(DatasetLoader):
         self.survey = survey
         self.alternate_outcome = alternate_outcome
         self.size = size
+        self.correlation_coeff = correlation_coeff
         if not conditioning_features:
             self.conditioning_features = feature_names[:2]
         if buckets:
@@ -203,23 +188,41 @@ class FolktablesLoader(DatasetLoader):
         data_source = ACSDataSource(
             survey_year=self.survey_year, horizon=self.horizon, survey=self.survey
         )
+
         acs_data = data_source.get_data(states=self.states, download=True)
+        ACSIncome._preprocess = ACSEmployment._preprocess
+
+        income = ACSIncome.df_to_numpy(acs_data)[1]
         X, y, group = ACSEmployment.df_to_numpy(acs_data)
+
         A = 1 * (group == 1)
 
         X = X.astype(int)
         y = y.astype(int)
 
+        def transform_values(value):
+            if value < 20:
+                return 1
+            elif 20 <= value <= 24:
+                return 2
+            else:
+                return None
+
+        mapping = {0: 0, 1: 0, 2: 0, 3: 0, 4: 1}
+
         # last feature is the group
         df = pd.DataFrame(X, columns=ACSEmployment.features)
-        df = self._group_features(df)
-        df = df[self.feature_names]
+        # Apply the mapping to the column
+        df["PINCP"] = income.astype(int)
 
+        df = df[self.feature_names]
+        df["MIL"] = df["MIL"].map(mapping)
         X_selected = df.to_numpy()
 
-        obs = expit(X_selected[:, 0] - X_selected[:, 1]) > self.rng.uniform(
-            size=X.shape[0]
-        )
+        X_normed = MinMaxScaler().fit_transform(X_selected)
+        obs = expit(
+            -X_normed[:, 0] - self.correlation_coeff * X_normed[:, 1]
+        ) > self.rng.uniform(size=X.shape[0])
         size = X.shape[0] if not self.size else self.size
         return X_selected[:size], A[:size], y[:size], obs[:size]
 
@@ -250,6 +253,7 @@ class FolktablesLoader(DatasetLoader):
     ) -> Tuple[pd.DataFrame, List[List[str]]]:
         data = pd.DataFrame()
         levels = []
+
         for column_idx in range(X.shape[1]):
             features = pd.get_dummies(X[:, column_idx])
             strata_number = features.shape[1]
@@ -277,10 +281,10 @@ class FolktablesLoader(DatasetLoader):
         X_sample = X[obs]
         y_sample = y[obs]
 
-        # Compute conditional mean using sex feature
         empirical_conditional_mean = self._get_ate_conditional_mean(
             1 - X_sample[:, -1], y_sample
         )
+
         true_conditional_mean = self._get_ate_conditional_mean(1 - X[:, -1], y)
 
         population_df, levels = self._create_dataframe(
