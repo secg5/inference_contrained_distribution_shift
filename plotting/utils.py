@@ -17,7 +17,9 @@ def generate_plot_dro(
     max_steps = plotting_df.groupby(["matrix_type", "restriction_type"]).max()
 
     masks = {
-        ("Nx12", "DRO"): (plotting_df["step"] == max_steps.loc[("Nx12", "DRO"), "step"])
+        ("unrestricted", "DRO"): (
+            plotting_df["step"] == max_steps.loc[("unrestricted", "DRO"), "step"]
+        )
         & (plotting_df["restriction_type"] == "DRO"),
     }
 
@@ -37,7 +39,7 @@ def generate_plot_dro(
     return plotting_df
 
 
-def generate_theta_plots_1_2_3(
+def generate_constraints_plots(
     base_path: str, timestamp_ours: str, timestamp_dro: str, ax
 ):
     plotting_df_ours = pd.read_csv(
@@ -52,35 +54,37 @@ def generate_theta_plots_1_2_3(
     max_steps = plotting_df.groupby(["matrix_type", "restriction_type"]).max()
 
     masks = {
-        ("Nx12", "DRO_worst_case"): (
-            plotting_df["step"] == max_steps.loc[("Nx12", "DRO_worst_case"), "step"]
+        ("unrestricted", "DRO_worst_case"): (
+            plotting_df["step"]
+            == max_steps.loc[("unrestricted", "DRO_worst_case"), "step"]
         )
-        & (plotting_df["matrix_type"] == "Nx12")
+        & (plotting_df["matrix_type"] == "unrestricted")
         & (plotting_df["restriction_type"] == "DRO_worst_case"),
-        ("Nx12", "count"): (
-            plotting_df["step"] == max_steps.loc[("Nx12", "count"), "step"]
+        ("unrestricted", "count"): (
+            plotting_df["step"] == max_steps.loc[("unrestricted", "count"), "step"]
         )
-        & (plotting_df["matrix_type"] == "Nx12")
+        & (plotting_df["matrix_type"] == "unrestricted")
         & (plotting_df["restriction_type"] == "count"),
-        ("Nx8", "DRO_worst_case"): (
-            plotting_df["step"] == max_steps.loc[("Nx8", "DRO_worst_case"), "step"]
+        ("separable", "DRO_worst_case"): (
+            plotting_df["step"]
+            == max_steps.loc[("separable", "DRO_worst_case"), "step"]
         )
-        & (plotting_df["matrix_type"] == "Nx8")
+        & (plotting_df["matrix_type"] == "separable")
         & (plotting_df["restriction_type"] == "DRO_worst_case"),
-        ("Nx8", "count"): (
-            plotting_df["step"] == max_steps.loc[("Nx8", "count"), "step"]
+        ("separable", "count"): (
+            plotting_df["step"] == max_steps.loc[("separable", "count"), "step"]
         )
-        & (plotting_df["matrix_type"] == "Nx8")
+        & (plotting_df["matrix_type"] == "separable")
         & (plotting_df["restriction_type"] == "count"),
-        ("Nx6", "DRO_worst_case"): (
-            plotting_df["step"] == max_steps.loc[("Nx6", "DRO_worst_case"), "step"]
+        ("targeted", "DRO_worst_case"): (
+            plotting_df["step"] == max_steps.loc[("targeted", "DRO_worst_case"), "step"]
         )
-        & (plotting_df["matrix_type"] == "Nx6")
+        & (plotting_df["matrix_type"] == "targeted")
         & (plotting_df["restriction_type"] == "DRO_worst_case"),
-        ("Nx6", "count"): (
-            plotting_df["step"] == max_steps.loc[("Nx6", "count"), "step"]
+        ("targeted", "count"): (
+            plotting_df["step"] == max_steps.loc[("targeted", "count"), "step"]
         )
-        & (plotting_df["matrix_type"] == "Nx6")
+        & (plotting_df["matrix_type"] == "targeted")
         & (plotting_df["restriction_type"] == "count"),
     }
 
@@ -99,9 +103,7 @@ def generate_theta_plots_1_2_3(
     return plotting_df
 
 
-def generate_theta_plots_4_5_6(
-    base_path: str, timestamp_ours: str, timestamp_dro: str, ax
-):
+def generate_theta_plots(base_path: str, timestamp_ours: str, timestamp_dro: str, ax):
     plotting_df_ours = pd.read_csv(
         os.path.join(base_path, timestamp_ours, "plotting_df.csv"), low_memory=False
     )
@@ -203,7 +205,7 @@ def generate_cov_plots(base_path: str, timestamp: str, ax):
     return plotting_df
 
 
-def generate_theta_plots_1_2_regression(
+def generate_constraints_plots_regression(
     base_path: str, timestamp_ours: str, timestamp_dro: str, ax
 ):
     plotting_df_ours = pd.read_csv(
@@ -218,25 +220,26 @@ def generate_theta_plots_1_2_regression(
     max_steps = plotting_df.groupby(["matrix_type", "restriction_type"]).max()
 
     masks = {
-        ("Nx12", "DRO_worst_case"): (
-            plotting_df["step"] == max_steps.loc[("Nx12", "DRO_worst_case"), "step"]
+        ("unrestricted", "DRO_worst_case"): (
+            plotting_df["step"]
+            == max_steps.loc[("unrestricted", "DRO_worst_case"), "step"]
         )
-        & (plotting_df["matrix_type"] == "Nx12")
+        & (plotting_df["matrix_type"] == "unrestricted")
         & (plotting_df["restriction_type"] == "DRO_worst_case"),
-        ("Nx12", "count"): (
-            plotting_df["step"] == max_steps.loc[("Nx12", "count"), "step"]
+        ("unrestricted", "count"): (
+            plotting_df["step"] == max_steps.loc[("unrestricted", "count"), "step"]
         )
-        & (plotting_df["matrix_type"] == "Nx12")
+        & (plotting_df["matrix_type"] == "unrestricted")
         & (plotting_df["restriction_type"] == "count"),
-        ("Nx6", "DRO_worst_case"): (
-            plotting_df["step"] == max_steps.loc[("Nx6", "DRO_worst_case"), "step"]
+        ("targeted", "DRO_worst_case"): (
+            plotting_df["step"] == max_steps.loc[("targeted", "DRO_worst_case"), "step"]
         )
-        & (plotting_df["matrix_type"] == "Nx6")
+        & (plotting_df["matrix_type"] == "targeted")
         & (plotting_df["restriction_type"] == "DRO_worst_case"),
-        ("Nx6", "count"): (
-            plotting_df["step"] == max_steps.loc[("Nx6", "count"), "step"]
+        ("targeted", "count"): (
+            plotting_df["step"] == max_steps.loc[("targeted", "count"), "step"]
         )
-        & (plotting_df["matrix_type"] == "Nx6")
+        & (plotting_df["matrix_type"] == "targeted")
         & (plotting_df["restriction_type"] == "count"),
     }
 
@@ -258,7 +261,7 @@ def generate_theta_plots_1_2_regression(
     return plotting_df
 
 
-def generate_theta_plots_3_4_regression(
+def generate_theta_plots_regression(
     base_path: str, timestamp_ours: str, timestamp_dro: str, ax
 ):
     plotting_df_ours = pd.read_csv(
